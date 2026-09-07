@@ -1,0 +1,44 @@
+name: Investor Desk checks
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: investor
+          POSTGRES_PASSWORD: investor
+          POSTGRES_DB: investor_desk
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U investor -d investor_desk"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://investor:investor@127.0.0.1:5432/investor_desk?schema=public
+      MARKET_DATA_MODE: demo
+      NEXT_TELEMETRY_DISABLED: 1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx prisma generate && npx prisma migrate deploy
+      - run: npm test && npm run lint && npm run format:check
+      - run: npm run build
+      - name: API acceptance scenarios
+        run: |
+          npm start > /tmp/investor-desk.log 2>&1 &
+          for i in $(seq 1 40); do
+            if curl --fail --silent http://127.0.0.1:3000/api/health; then break; fi
+            sleep 1
+          done
+          npm run test:api
+      - name: Server log on failure
+        if: failure()
+        run: cat /tmp/investor-desk.log || true

@@ -1,0 +1,174 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AssetClass {
+  EQUITY
+  OPTION
+}
+
+enum CashEntryType {
+  DEPOSIT
+  WITHDRAWAL
+  BUY
+  SELL
+}
+
+enum OrderType {
+  MARKET
+  LIMIT
+}
+
+enum Side {
+  BUY
+  SELL
+}
+
+enum OrderStatus {
+  PENDING
+  FILLED
+  REJECTED
+  CANCELLED
+}
+
+enum OptionRight {
+  CALL
+  PUT
+}
+
+enum TargetMode {
+  PRICE
+  MARKET_CAP
+}
+
+model Portfolio {
+  id                String            @id @default(cuid())
+  name              String
+  baseCurrency      String            @default("USD")
+  startingCash      Decimal           @db.Decimal(18, 2)
+  cashBalance       Decimal           @db.Decimal(18, 2)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  positions         Position[]
+  cashLedgerEntries CashLedgerEntry[]
+  orders            Order[]
+}
+
+model CashLedgerEntry {
+  id          String        @id @default(cuid())
+  portfolioId String
+  type        CashEntryType
+  amount      Decimal       @db.Decimal(18, 2)
+  note        String?
+  createdAt   DateTime      @default(now())
+  portfolio   Portfolio     @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+
+  @@index([portfolioId, createdAt])
+}
+
+model Position {
+  id            String                @id @default(cuid())
+  portfolioId   String
+  assetClass    AssetClass
+  symbol        String
+  quantity      Decimal               @db.Decimal(20, 6)
+  avgCost       Decimal               @db.Decimal(20, 6)
+  marketValue   Decimal               @default(0) @db.Decimal(20, 6)
+  unrealizedPnL Decimal               @default(0) @db.Decimal(20, 6)
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+  portfolio     Portfolio             @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+  optionDetails OptionPositionDetails?
+  targetScenario TargetScenario?
+  fills         Fill[]
+
+  @@unique([portfolioId, symbol, assetClass])
+  @@index([portfolioId])
+}
+
+model OptionPositionDetails {
+  positionId      String      @id
+  underlying      String
+  optionSymbol    String
+  right           OptionRight
+  strike          Decimal     @db.Decimal(20, 6)
+  expiration      DateTime
+  contracts       Int
+  multiplier      Int         @default(100)
+  entryPremium    Decimal     @db.Decimal(20, 6)
+  position        Position    @relation(fields: [positionId], references: [id], onDelete: Cascade)
+
+  @@index([underlying])
+}
+
+model TargetScenario {
+  positionId              String     @id
+  targetMode              TargetMode
+  targetPrice             Decimal?   @db.Decimal(20, 6)
+  targetMarketCap         Decimal?   @db.Decimal(20, 6)
+  sharesOutstandingLive   Decimal?   @db.Decimal(30, 6)
+  sharesOutstandingManual Decimal?   @db.Decimal(30, 6)
+  useManualShares         Boolean    @default(false)
+  updatedAt               DateTime   @updatedAt
+  position                Position   @relation(fields: [positionId], references: [id], onDelete: Cascade)
+}
+
+model Order {
+  id                   String      @id @default(cuid())
+  clientOrderId        String?     @unique
+  quoteSource          String?
+  portfolioId          String
+  assetClass           AssetClass
+  symbol               String
+  orderType            OrderType
+  side                 Side
+  quantity             Decimal     @db.Decimal(20, 6)
+  limitPrice           Decimal?    @db.Decimal(20, 6)
+  status               OrderStatus @default(PENDING)
+  optionContractSymbol String?
+  optionRight          OptionRight?
+  optionStrike         Decimal?    @db.Decimal(20, 6)
+  optionExpiration     DateTime?
+  submittedAt          DateTime    @default(now())
+  filledAt             DateTime?
+  portfolio            Portfolio   @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+  fills                Fill[]
+
+  @@index([portfolioId, submittedAt])
+}
+
+model Fill {
+  id         String   @id @default(cuid())
+  orderId    String
+  positionId String?
+  side       Side
+  quantity   Decimal  @db.Decimal(20, 6)
+  price      Decimal  @db.Decimal(20, 6)
+  realizedPnL Decimal @default(0) @db.Decimal(20, 6)
+  executedAt DateTime @default(now())
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  position   Position? @relation(fields: [positionId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@index([positionId])
+}
+
+model QuoteCache {
+  symbol     String
+  assetClass AssetClass
+  bid        Decimal?  @db.Decimal(20, 6)
+  ask        Decimal?  @db.Decimal(20, 6)
+  last       Decimal?  @db.Decimal(20, 6)
+  mark       Decimal?  @db.Decimal(20, 6)
+  source     String
+  impliedVolatility Float?
+  asOf       DateTime
+  updatedAt  DateTime  @updatedAt
+
+  @@id([symbol, assetClass])
+}
