@@ -10,14 +10,22 @@ if (!["127.0.0.1", "localhost"].includes(new URL(base).hostname))
 const db = new PrismaClient(),
   ids = [],
   prefix = `__verify_${Date.now()}_`;
-let passed = 0;
+let passed = 0,
+  cookie = "",
+  userId;
+const staleSymbol =
+  "Q" + randomUUID().replaceAll("-", "").slice(0, 9).toUpperCase();
 const ok = (label) => {
   console.log(`PASS ${++passed}: ${label}`);
 };
 async function request(path, method = "GET", body, expected = 200) {
   const response = await fetch(base + path, {
     method,
-    headers: body ? { "Content-Type": "application/json" } : undefined,
+    headers: {
+      Origin: base,
+      Cookie: cookie,
+      ...(body ? { "Content-Type": "application/json" } : {}),
+    },
     body: body ? JSON.stringify(body) : undefined,
     signal: AbortSignal.timeout(30000),
   });
@@ -44,6 +52,28 @@ try {
   const health = await request("/api/health");
   assert.equal(health.mode, "demo", "Tests require explicit demo mode");
   ok("App and database healthy in labeled sample mode");
+  const signup = await fetch(base + "/api/auth/sign-up/email", {
+    method: "POST",
+    headers: { Origin: base, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: prefix + "Profile",
+      email: prefix + "@example.test",
+      password: randomUUID() + "aA9!",
+    }),
+  });
+  assert.equal(signup.status, 200, "Disposable profile sign-up must succeed");
+  userId = (await signup.json()).user.id;
+  cookie = signup.headers
+    .getSetCookie()
+    .map((c) => c.split(";")[0])
+    .join("; ");
+  assert.ok(cookie, "Authenticated cookie required");
+  const blank = await request("/api/desk");
+  assert.equal(blank.portfolios.length, 0, "New profile starts empty");
+  const pl = await request("/api/quotes/snapshot?symbol=PL&assetClass=EQUITY");
+  assert.equal(pl.quote, null);
+  assert.equal(pl.availability.code, "DEMO_UNAVAILABLE");
+  ok("New profile starts blank and unsupported sample ticker is explained");
   const p = await portfolio("Personal", 250000),
     p2 = await portfolio("Second", 1000);
   ok("Independent funded portfolios");
@@ -179,7 +209,11 @@ try {
     [1, 2].map(() =>
       fetch(base + "/api/orders/execute", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Origin: base,
+          Cookie: cookie,
+        },
         body: JSON.stringify({
           ...ticket,
           portfolioId: concurrent.id,
@@ -229,15 +263,15 @@ try {
     data: {
       portfolioId: concurrent.id,
       assetClass: "EQUITY",
-      symbol: "STALETEST",
+      symbol: staleSymbol,
       quantity: 1,
       avgCost: 10,
     },
   });
   await db.quoteCache.upsert({
-    where: { symbol_assetClass: { symbol: "STALETEST", assetClass: "EQUITY" } },
+    where: { symbol_assetClass: { symbol: staleSymbol, assetClass: "EQUITY" } },
     create: {
-      symbol: "STALETEST",
+      symbol: staleSymbol,
       assetClass: "EQUITY",
       bid: 7,
       ask: 9,
@@ -249,7 +283,7 @@ try {
     update: { asOf: new Date("2020-01-01"), source: "demo" },
   });
   const rows = await request(`/api/positions?portfolioId=${concurrent.id}`);
-  const stale = rows.positions.find((x) => x.symbol === "STALETEST");
+  const stale = rows.positions.find((x) => x.symbol === staleSymbol);
   assert.equal(stale.projection.currentMarketValue, 8);
   assert.equal(stale.projection.quoteStale, true);
   const controller = new AbortController(),
@@ -257,7 +291,7 @@ try {
   try {
     const response = await fetch(
       `${base}/api/quotes/stream?portfolioId=${concurrent.id}`,
-      { signal: controller.signal },
+      { headers: { Origin: base, Cookie: cookie }, signal: controller.signal },
     );
     const reader = response.body.getReader();
     let text = "";
@@ -299,8 +333,12 @@ try {
       await db.portfolio.delete({ where: { id } });
   }
   await db.quoteCache.deleteMany({
-    where: { symbol: "STALETEST", source: "demo" },
+    where: { symbol: staleSymbol, source: "demo" },
   });
+  if (userId)
+    await db.user.deleteMany({
+      where: { id: userId, email: prefix + "@example.test" },
+    });
   await db.$disconnect();
   console.log("Disposable verification portfolios removed.");
 }

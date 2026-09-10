@@ -14,31 +14,40 @@ const asArray = <T>(value: T | T[] | null | undefined): T[] => {
   return Array.isArray(value) ? value : [value];
 };
 
+const price = (value: unknown): number | null => {
+  if (value == null || value === "" || typeof value === "boolean") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+};
+const timestamp = (bid: unknown, ask: unknown) => {
+  const a = Number(bid),
+    b = Number(ask);
+  const time = Math.min(a, b);
+  const date = new Date(time);
+  return Number.isFinite(time) && time > 0 && Number.isFinite(date.getTime())
+    ? date
+    : new Date(0);
+};
 const parseContract = (raw: any): OptionContract => {
   const right = raw.option_type === "put" ? OptionRight.PUT : OptionRight.CALL;
-  const bid = raw.bid != null ? Number(raw.bid) : null;
-  const ask = raw.ask != null ? Number(raw.ask) : null;
+  const bid = price(raw.bid);
+  const ask = price(raw.ask);
   return {
     contractSymbol: String(raw.symbol),
     multiplier: Number(raw.contract_size ?? 100),
     source: env.TRADIER_BASE_URL.includes("sandbox")
       ? "tradier-delayed"
       : "tradier",
-    asOf: new Date(
-      raw.bid_date && raw.ask_date
-        ? Math.min(Number(raw.bid_date), Number(raw.ask_date))
-        : 0,
-    ),
+    asOf: timestamp(raw.bid_date, raw.ask_date),
     underlying: String(raw.root_symbol ?? raw.underlying ?? ""),
     right,
     strike: Number(raw.strike),
     expiration: new Date(`${raw.expiration_date}T20:00:00.000Z`),
     bid,
     ask,
-    last: raw.last != null ? Number(raw.last) : null,
-    mark: bid != null && ask != null ? (bid + ask) / 2 : (bid ?? ask ?? null),
-    impliedVolatility:
-      raw.greeks?.mid_iv != null ? Number(raw.greeks.mid_iv) : null,
+    last: price(raw.last),
+    mark: bid != null && ask != null && bid <= ask ? (bid + ask) / 2 : null,
+    impliedVolatility: price(raw.greeks?.mid_iv),
   };
 };
 

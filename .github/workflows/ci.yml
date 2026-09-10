@@ -27,6 +27,8 @@ jobs:
         with:
           node-version: 24
           cache: npm
+      - name: Ephemeral auth secret
+        run: echo "BETTER_AUTH_SECRET=$(openssl rand -hex 48)" >> "$GITHUB_ENV"
       - run: npm ci
       - run: npx prisma generate && npx prisma migrate deploy
       - run: npm test && npm run lint && npm run format:check
@@ -39,6 +41,18 @@ jobs:
             sleep 1
           done
           npm run test:api
+          set -o pipefail
+          npm run test:stress | tee /tmp/investor-desk-stress.log
+          npm run test:guest | tee /tmp/investor-desk-guest.log
+      - name: Preserve stress-test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: investor-desk-stress-report
+          path: |
+            /tmp/investor-desk-stress.log
+            /tmp/investor-desk-guest.log
+          if-no-files-found: ignore
       - name: Server log on failure
         if: failure()
         run: cat /tmp/investor-desk.log || true

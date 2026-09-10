@@ -1,3 +1,4 @@
+import { isQuoteStale } from "@/server/domain/staleness";
 import { Prisma, TargetMode } from "@prisma/client";
 import { env } from "@/lib/env";
 import {
@@ -73,9 +74,7 @@ export async function buildPositionProjection(position: PositionWithRelations) {
     optionModelProjectedValue: model,
     hasTarget: targetUnderlyingPrice !== null,
     priceEstimated: mark === null,
-    quoteStale:
-      !quote ||
-      Date.now() - quote.asOf.getTime() > env.QUOTE_STALE_SECONDS * 1000,
+    quoteStale: !quote || isQuoteStale(quote.asOf, env.QUOTE_STALE_SECONDS),
     quoteAsOf: quote?.asOf.toISOString() ?? null,
     quoteSource: quote?.source ?? "unavailable",
     impliedVolatility: option ? modelIV : null,

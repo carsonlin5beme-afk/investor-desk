@@ -32,10 +32,22 @@ export const orderTicketSchema = z
     side: z.nativeEnum(Side),
     orderType: z.nativeEnum(OrderType),
     quantity: z.number().finite().positive().max(1e9).multipleOf(0.000001),
-    limitPrice: z.number().positive().optional(),
+    limitPrice: z
+      .number()
+      .finite()
+      .min(0.000001)
+      .max(1e12)
+      .multipleOf(0.000001)
+      .optional(),
     optionContractSymbol: z.string().optional(),
     optionRight: z.nativeEnum(OptionRight).optional(),
-    optionStrike: z.number().positive().optional(),
+    optionStrike: z
+      .number()
+      .finite()
+      .min(0.001)
+      .max(99999.999)
+      .multipleOf(0.001)
+      .optional(),
     optionExpiration: z.coerce.date().optional(),
   })
   .superRefine((value, ctx) => {
@@ -89,8 +101,20 @@ export const targetScenarioSchema = z
   .object({
     targetMode: z.nativeEnum(TargetMode),
     targetPrice: z.number().finite().min(0).max(1e12).optional(),
-    targetMarketCap: z.number().positive().optional(),
-    sharesOutstandingManual: z.number().positive().optional(),
+    targetMarketCap: z
+      .number()
+      .finite()
+      .min(0.000001)
+      .max(1e13)
+      .multipleOf(0.000001)
+      .optional(),
+    sharesOutstandingManual: z
+      .number()
+      .finite()
+      .min(0.000001)
+      .max(1e15)
+      .multipleOf(0.000001)
+      .optional(),
     useManualShares: z.boolean().optional(),
   })
   .superRefine((value, ctx) => {

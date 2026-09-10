@@ -53,7 +53,18 @@ if (action === "start") {
     process.exit(0);
   }
   process.kill(record.pid, "SIGTERM");
-  console.log("Graceful shutdown requested. Portfolio data is preserved.");
+  console.log(
+    "Graceful shutdown requested. Saved portfolio data is preserved; temporary guest work is not.",
+  );
+  const deadline = Date.now() + 20000;
+  while (ownedProcess()?.pid === record.pid && Date.now() < deadline)
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  if (ownedProcess()?.pid === record.pid) {
+    console.error(
+      "Shutdown is still in progress. Wait before starting again; no process was force-killed.",
+    );
+    process.exitCode = 1;
+  } else console.log("Investor Desk stopped.");
 } else if (action === "status") {
   console.log(
     record

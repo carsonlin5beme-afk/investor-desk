@@ -7,7 +7,7 @@ import { providers } from "@/server/providers/factory";
 import { decodeContract } from "@/server/providers/demo";
 import { getLiveQuote } from "./quote-service";
 const D = Prisma.Decimal;
-async function resolveTicket(ticket: OrderTicket) {
+export async function resolveTicket(ticket: OrderTicket) {
   const symbol =
     ticket.assetClass === "OPTION"
       ? ticket.optionContractSymbol!
@@ -86,6 +86,14 @@ async function checkAccount(
     throw new Error(
       "Cannot sell more than the quantity owned. Short selling is disabled.",
     );
+  // Permit only a full close of a sub-cent residual, with proceeds rounded to cents.
+  if (
+    notional < 0.01 &&
+    !(ticket.side === "SELL" && position?.quantity.equals(ticket.quantity))
+  )
+    throw new Error(
+      "Minimum order value is $0.01, except when closing an entire residual position.",
+    );
   return { portfolio, position };
 }
 export const previewOrder = async (ticket: OrderTicket) => {
@@ -93,8 +101,6 @@ export const previewOrder = async (ticket: OrderTicket) => {
   if (!decision.fillable || decision.fillPrice == null)
     return { ...decision, quote };
   const estimatedNotional = estimateOrderNotional(ticket, decision.fillPrice);
-  if (estimatedNotional < 0.01)
-    throw new Error("Minimum order value is $0.01.");
   const { portfolio, position } = await checkAccount(
     prisma,
     ticket,
@@ -159,7 +165,6 @@ export const executeOrder = async (ticket: OrderTicket) => {
     throw new Error(decision.reason ?? "Order not fillable.");
   const fillPrice = decision.fillPrice;
   const notional = estimateOrderNotional(ticket, fillPrice);
-  if (notional < 0.01) throw new Error("Minimum order value is $0.01.");
   return prisma.$transaction(
     async (tx) => {
       // Serialize all cash and position mutations per portfolio, including withdrawals.

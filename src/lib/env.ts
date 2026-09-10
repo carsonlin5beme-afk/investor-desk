@@ -1,8 +1,10 @@
 import { z } from "zod";
+import { developmentMarketEnv } from "@/server/config/development-market-env";
 
 const envSchema = z.object({
   MARKET_DATA_MODE: z.enum(["demo", "live"]).default("demo"),
-  OPTIONS_PROVIDER: z.enum(["tradier", "alpaca"]).default("tradier"),
+  EQUITY_PROVIDER: z.enum(["alpaca", "schwab"]).default("alpaca"),
+  OPTIONS_PROVIDER: z.enum(["tradier", "alpaca", "schwab"]).default("tradier"),
   ALPACA_REFERENCE_BASE_URL: z
     .string()
     .url()
@@ -32,13 +34,14 @@ const envSchema = z.object({
   OPTIONS_POLL_SECONDS: z.coerce.number().default(20),
 });
 
-const parsed = envSchema.safeParse(process.env);
+const parsed = envSchema.safeParse(developmentMarketEnv(process.env));
 
 if (!parsed.success) {
-  const details = parsed.error.issues
-    .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
-    .join("; ");
-  throw new Error(`Invalid environment configuration: ${details}`);
+  const fields = [
+    ...new Set(parsed.error.issues.map((issue) => issue.path.join("."))),
+  ].join(", ");
+  // Zod messages can include rejected values. Report field names only.
+  throw new Error(`Invalid environment configuration fields: ${fields}.`);
 }
 
 export const env = parsed.data;

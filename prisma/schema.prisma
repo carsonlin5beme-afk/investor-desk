@@ -46,7 +46,77 @@ enum TargetMode {
   MARKET_CAP
 }
 
+model User {
+  id            String        @id
+  name          String
+  email         String        @unique
+  emailVerified Boolean       @default(false)
+  image         String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  sessions      Session[]
+  accounts      Account[]
+  portfolios    Portfolio[]
+  guestImports  GuestImport[]
+  workspaceEntries WorkspaceEntry[]
+}
+
+model Session {
+  id        String   @id
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@unique([providerId, accountId])
+  @@index([userId])
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+}
+
+model RateLimit {
+  id          String @id
+  key         String @unique
+  count       Int
+  lastRequest BigInt
+}
+
 model Portfolio {
+  // Unowned legacy portfolios stay preserved, but are not visible to any profile.
+  userId            String?
+  user              User?             @relation(fields: [userId], references: [id], onDelete: Cascade)
   id                String            @id @default(cuid())
   name              String
   baseCurrency      String            @default("USD")
@@ -57,6 +127,8 @@ model Portfolio {
   positions         Position[]
   cashLedgerEntries CashLedgerEntry[]
   orders            Order[]
+
+  @@index([userId])
 }
 
 model CashLedgerEntry {
@@ -72,36 +144,36 @@ model CashLedgerEntry {
 }
 
 model Position {
-  id            String                @id @default(cuid())
-  portfolioId   String
-  assetClass    AssetClass
-  symbol        String
-  quantity      Decimal               @db.Decimal(20, 6)
-  avgCost       Decimal               @db.Decimal(20, 6)
-  marketValue   Decimal               @default(0) @db.Decimal(20, 6)
-  unrealizedPnL Decimal               @default(0) @db.Decimal(20, 6)
-  createdAt     DateTime              @default(now())
-  updatedAt     DateTime              @updatedAt
-  portfolio     Portfolio             @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
-  optionDetails OptionPositionDetails?
+  id             String                 @id @default(cuid())
+  portfolioId    String
+  assetClass     AssetClass
+  symbol         String
+  quantity       Decimal                @db.Decimal(20, 6)
+  avgCost        Decimal                @db.Decimal(20, 6)
+  marketValue    Decimal                @default(0) @db.Decimal(20, 6)
+  unrealizedPnL  Decimal                @default(0) @db.Decimal(20, 6)
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+  portfolio      Portfolio              @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+  optionDetails  OptionPositionDetails?
   targetScenario TargetScenario?
-  fills         Fill[]
+  fills          Fill[]
 
   @@unique([portfolioId, symbol, assetClass])
   @@index([portfolioId])
 }
 
 model OptionPositionDetails {
-  positionId      String      @id
-  underlying      String
-  optionSymbol    String
-  right           OptionRight
-  strike          Decimal     @db.Decimal(20, 6)
-  expiration      DateTime
-  contracts       Int
-  multiplier      Int         @default(100)
-  entryPremium    Decimal     @db.Decimal(20, 6)
-  position        Position    @relation(fields: [positionId], references: [id], onDelete: Cascade)
+  positionId   String      @id
+  underlying   String
+  optionSymbol String
+  right        OptionRight
+  strike       Decimal     @db.Decimal(20, 6)
+  expiration   DateTime
+  contracts    Int
+  multiplier   Int         @default(100)
+  entryPremium Decimal     @db.Decimal(20, 6)
+  position     Position    @relation(fields: [positionId], references: [id], onDelete: Cascade)
 
   @@index([underlying])
 }
@@ -119,56 +191,77 @@ model TargetScenario {
 }
 
 model Order {
-  id                   String      @id @default(cuid())
-  clientOrderId        String?     @unique
+  id                   String       @id @default(cuid())
+  clientOrderId        String?      @unique
   quoteSource          String?
   portfolioId          String
   assetClass           AssetClass
   symbol               String
   orderType            OrderType
   side                 Side
-  quantity             Decimal     @db.Decimal(20, 6)
-  limitPrice           Decimal?    @db.Decimal(20, 6)
-  status               OrderStatus @default(PENDING)
+  quantity             Decimal      @db.Decimal(20, 6)
+  limitPrice           Decimal?     @db.Decimal(20, 6)
+  status               OrderStatus  @default(PENDING)
   optionContractSymbol String?
   optionRight          OptionRight?
-  optionStrike         Decimal?    @db.Decimal(20, 6)
+  optionStrike         Decimal?     @db.Decimal(20, 6)
   optionExpiration     DateTime?
-  submittedAt          DateTime    @default(now())
+  submittedAt          DateTime     @default(now())
   filledAt             DateTime?
-  portfolio            Portfolio   @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+  portfolio            Portfolio    @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
   fills                Fill[]
 
   @@index([portfolioId, submittedAt])
 }
 
 model Fill {
-  id         String   @id @default(cuid())
-  orderId    String
-  positionId String?
-  side       Side
-  quantity   Decimal  @db.Decimal(20, 6)
-  price      Decimal  @db.Decimal(20, 6)
-  realizedPnL Decimal @default(0) @db.Decimal(20, 6)
-  executedAt DateTime @default(now())
-  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  position   Position? @relation(fields: [positionId], references: [id], onDelete: SetNull)
+  id          String    @id @default(cuid())
+  orderId     String
+  positionId  String?
+  side        Side
+  quantity    Decimal   @db.Decimal(20, 6)
+  price       Decimal   @db.Decimal(20, 6)
+  realizedPnL Decimal   @default(0) @db.Decimal(20, 6)
+  executedAt  DateTime  @default(now())
+  order       Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  position    Position? @relation(fields: [positionId], references: [id], onDelete: SetNull)
 
   @@index([orderId])
   @@index([positionId])
 }
 
 model QuoteCache {
-  symbol     String
-  assetClass AssetClass
-  bid        Decimal?  @db.Decimal(20, 6)
-  ask        Decimal?  @db.Decimal(20, 6)
-  last       Decimal?  @db.Decimal(20, 6)
-  mark       Decimal?  @db.Decimal(20, 6)
-  source     String
+  symbol            String
+  assetClass        AssetClass
+  bid               Decimal?   @db.Decimal(20, 6)
+  ask               Decimal?   @db.Decimal(20, 6)
+  last              Decimal?   @db.Decimal(20, 6)
+  mark              Decimal?   @db.Decimal(20, 6)
+  source            String
   impliedVolatility Float?
-  asOf       DateTime
-  updatedAt  DateTime  @updatedAt
+  asOf              DateTime
+  updatedAt         DateTime   @updatedAt
 
   @@id([symbol, assetClass])
+}
+
+// Created only when an authenticated profile saves a temporary guest workspace.
+model GuestImport {
+  tokenHash    String   @id
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  portfolioIds Json
+  createdAt    DateTime @default(now())
+
+  @@index([userId])
+}
+
+model WorkspaceEntry {
+  userId String
+  key String
+  value Json
+  version Int @default(1)
+  updatedAt DateTime @updatedAt
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@id([userId, key])
 }

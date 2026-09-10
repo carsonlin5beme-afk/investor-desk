@@ -1,3 +1,5 @@
+import { guestResponse } from "@/server/guest/http";
+import { currentProfile, signInRequired } from "@/server/auth/access";
 import { CashEntryType } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -26,9 +28,14 @@ const summarizeByAssetClass = (positions: PositionProjection[]) => {
   return { equities, options };
 };
 
-export async function GET() {
+export async function GET(request: Request) {
+  const temporary = await guestResponse(request);
+  if (temporary) return temporary;
   try {
+    const user = await currentProfile();
+    if (!user) return NextResponse.json({ user: null, portfolios: [] });
     const portfolios = await prisma.portfolio.findMany({
+      where: { userId: user.id },
       orderBy: { createdAt: "asc" },
       include: {
         positions: {
@@ -79,7 +86,11 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  const temporary = await guestResponse(request);
+  if (temporary) return temporary;
   try {
+    const user = await currentProfile();
+    if (!user) return signInRequired();
     const body = await request.json();
     const parsed = createPortfolioSchema.safeParse(body);
     if (!parsed.success) {
@@ -95,6 +106,7 @@ export async function POST(request: NextRequest) {
     const created = await prisma.$transaction(async (tx) => {
       const portfolio = await tx.portfolio.create({
         data: {
+          userId: user.id,
           name: data.name,
           baseCurrency: data.baseCurrency,
           startingCash: toDecimal(data.startingCash),
@@ -127,6 +139,8 @@ export async function POST(request: NextRequest) {
       { status: 201 },
     );
   } catch (error) {
+    if (error instanceof SyntaxError)
+      return jsonError("Invalid JSON payload", 400);
     console.error(error);
     return jsonError("Failed to create portfolio", 500);
   }

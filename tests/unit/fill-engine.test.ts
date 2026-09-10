@@ -81,3 +81,20 @@ describe("fill-engine", () => {
     expect(hasSufficientCashForBuy(750, notional)).toBe(true);
   });
 });
+
+// Preview, saved and guest ledgers, and duplicate-order responses share this calculation.
+describe("decimal cash rounding", () => {
+  it.each([
+    [9.7, 320.05, 3104.49],
+    [0.7, 319.95, 223.97],
+    [1, 1.005, 1.01],
+    [10000, 1.2345678, 12345.68],
+  ])(
+    "rounds %s shares at %s consistently with stored fills",
+    (quantity, price, expected) => {
+      expect(estimateOrderNotional({ ...baseTicket, quantity }, price)).toBe(
+        expected,
+      );
+    },
+  );
+});

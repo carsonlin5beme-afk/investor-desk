@@ -1,0 +1,201 @@
+.dock {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+  flex-shrink: 0;
+  max-width: 100%;
+  color: var(--ink);
+  font: 12px/1.4 var(--font);
+}
+.pill {
+  display: flex;
+  align-items: center;
+  padding: 3px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  box-shadow: 0 7px 24px #0002;
+}
+.play {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--green);
+  background: var(--surface-soft);
+}
+.play svg {
+  width: 14px;
+  height: 14px;
+}
+.expand {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  height: 44px;
+  padding: 0 10px 0 12px;
+  text-align: left;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  border-radius: 10px;
+}
+.expand strong {
+  display: block;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ink);
+}
+.expand small {
+  display: block;
+  font-size: 9px;
+  line-height: 1.5;
+}
+.expand svg {
+  transition: transform 0.2s;
+}
+.panel {
+  width: 292px;
+  max-width: calc(100vw - 28px);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 16px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.panel header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.panel header > span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 9px;
+  letter-spacing: 0.15em;
+  color: var(--muted);
+}
+.panel header button {
+  border: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: none;
+  color: var(--muted);
+  display: grid;
+  place-items: center;
+}
+.station {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 16px 0 22px;
+}
+.station h2 {
+  font-family: var(--font-editorial), Georgia, serif;
+  font-size: 28px;
+  margin: 0;
+  color: var(--ink);
+  font-weight: 400;
+}
+.station p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 10px;
+}
+.orbit {
+  width: 52px;
+  height: 52px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  position: relative;
+  background: radial-gradient(
+    circle at center,
+    color-mix(in srgb, var(--green) 16%, transparent),
+    transparent 70%
+  );
+}
+.orbit::before {
+  content: "";
+  position: absolute;
+  inset: 9px -3px;
+  border: 1px solid color-mix(in srgb, var(--green) 45%, transparent);
+  border-radius: 50%;
+  transform: rotate(-35deg);
+}
+.orbit i {
+  position: absolute;
+  left: 23px;
+  top: 23px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--green);
+}
+.volumeLabel {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 15px;
+  color: var(--muted);
+}
+.volumeLabel label {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.volumeLabel output {
+  color: var(--ink);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.panel input[type="range"] {
+  width: 100%;
+  height: 32px;
+  min-height: 32px;
+  margin: 7px 0 0;
+  padding: 0;
+  accent-color: var(--green);
+}
+.note {
+  margin: 8px 0 0;
+  font-size: 10px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+.dialogControl {
+  color: var(--green);
+  background: var(--surface-soft);
+  flex: 0 0 40px;
+}
+@media (max-width: 760px) {
+  .expand {
+    gap: 12px;
+  }
+}
+@media (max-height: 480px) {
+  .panel {
+    max-height: calc(100dvh - 98px);
+    overflow: auto;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dock *,
+  .dock *::before {
+    transition: none !important;
+  }
+}
+@media print {
+  .dock,
+  .dialogControl {
+    display: none;
+  }
+}

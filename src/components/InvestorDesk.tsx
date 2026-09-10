@@ -1,215 +1,139 @@
 "use client";
+import {
+  AmbientRadioControls,
+  DialogRadioControl,
+} from "@/components/AmbientRadio";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ArrowUpRight,
   ArrowRight,
+  ArrowUpRight,
+  ArrowDownRight,
   Plus,
   LayoutDashboard,
   Wallet,
   Target,
-  Activity,
   Download,
   RefreshCw,
   Settings2,
   BarChart3,
   Layers,
   ChevronRight,
-  AlertCircle,
   Check,
-  Building2,
+  Search,
+  BookOpen,
+  GitCompareArrows,
+  SlidersHorizontal,
+  Menu,
+  X,
+  Eye,
+  EyeOff,
+  MoreHorizontal,
+  Pin,
+  Sparkles,
+  ExternalLink,
 } from "lucide-react";
 import {
   api,
-  DeskData,
-  Portfolio,
-  Holding,
+  type DeskData,
+  type Portfolio,
+  type Holding,
   money,
-  compact,
   num,
 } from "@/lib/desk-types";
-import { blackScholesPrice } from "@/server/domain/black-scholes";
-import { MarketDataCheck } from "./MarketDataCheck";
+import { assetFromHolding, totalAt } from "@/lib/studio";
+import { authClient } from "@/lib/auth-client";
 import { DeskModal } from "./DeskModal";
 import { TargetEditor } from "./TargetEditor";
 import { OrderTicket } from "./OrderTicket";
-function scenarioValue(h: Holding, progress: number) {
-  const p = h.projection;
-  if (!p.hasTarget || p.targetUnderlyingPrice == null)
-    return p.currentMarketValue;
-  if (h.assetClass === "EQUITY")
-    return (
-      p.currentMarketValue +
-      (p.projectedValue - p.currentMarketValue) * progress
-    );
-  const o = h.optionDetails;
-  if (!o || p.underlyingPrice == null)
-    return (
-      p.currentMarketValue +
-      (p.projectedValue - p.currentMarketValue) * progress
-    );
-  const spot =
-    p.underlyingPrice +
-    (p.targetUnderlyingPrice - p.underlyingPrice) * progress;
-  const model =
-    blackScholesPrice({
-      spot,
-      strike: Number(o.strike),
-      timeToExpiryYears: Math.max(
-        0,
-        (new Date(o.expiration).getTime() - Date.now()) / (365 * 86400000),
-      ),
-      riskFreeRate: 0.04,
-      volatility: p.impliedVolatility ?? 0.6,
-      isCall: o.right === "CALL",
-    }) *
-    h.quantity *
-    o.multiplier;
-  const base =
-    blackScholesPrice({
-      spot: p.underlyingPrice,
-      strike: Number(o.strike),
-      timeToExpiryYears: Math.max(
-        0,
-        (new Date(o.expiration).getTime() - Date.now()) / (365 * 86400000),
-      ),
-      riskFreeRate: 0.04,
-      volatility: p.impliedVolatility ?? 0.6,
-      isCall: o.right === "CALL",
-    }) *
-    h.quantity *
-    o.multiplier;
-  return Math.max(0, model + (p.currentMarketValue - base) * (1 - progress));
-}
-function Trajectory({
-  positions,
-  cash,
-  current,
-  projected,
-}: {
-  positions: Holding[];
-  cash: number;
-  current: number;
-  projected: number;
-}) {
-  const [progress, setProgress] = useState(100);
-  const values = useMemo(
-    () =>
-      Array.from(
-        { length: 41 },
-        (_, i) =>
-          cash + positions.reduce((s, h) => s + scenarioValue(h, i / 40), 0),
-      ),
-    [positions, cash],
-  );
-  const min = Math.min(...values, current) * 0.85,
-    max = Math.max(...values, projected) * 1.05 || 1,
-    span = max - min || 1;
-  const x = (i: number) => 30 + (i / 40) * 710,
-    y = (v: number) => 185 - ((v - min) / span) * 155;
-  const line = values
-    .map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`)
-    .join(" ");
-  const value =
-    cash + positions.reduce((s, h) => s + scenarioValue(h, progress / 100), 0);
-  return (
-    <section className="panel trajectory">
-      <div className="section-heading">
-        <div>
-          <span className="eyebrow">Your investment thesis, visualized</span>
-          <h2>From today to your targets</h2>
-        </div>
-        <span className="badge subtle">Scenario explorer</span>
-      </div>
-      <div className="chart-summary">
-        <strong>{money(value, 0)}</strong>
-        <span>at {progress}% of the move toward each target</span>
-      </div>
-      <svg
-        className="trajectory-chart"
-        viewBox="0 0 780 220"
-        role="img"
-        aria-label="Hypothetical portfolio value as each holding moves toward its target, not a time forecast"
-      >
-        <defs>
-          <linearGradient id="chart-fill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#177968" stopOpacity=".20" />
-            <stop offset="100%" stopColor="#177968" stopOpacity="0" />
-          </linearGradient>
-        </defs>
-        {[0, 1, 2, 3].map((i) => (
-          <line
-            key={i}
-            x1="30"
-            x2="740"
-            y1={30 + i * 52}
-            y2={30 + i * 52}
-            stroke="#dce3dd"
-            strokeDasharray="3 5"
-          />
-        ))}
-        <path d={`${line} L740,195 L30,195 Z`} fill="url(#chart-fill)" />
-        <path d={line} fill="none" stroke="#177968" strokeWidth="3" />
-        <line
-          x1={30 + (progress / 100) * 710}
-          x2={30 + (progress / 100) * 710}
-          y1="25"
-          y2="195"
-          stroke="#ba7956"
-          strokeDasharray="4 4"
-        />
-        <circle
-          cx={30 + (progress / 100) * 710}
-          cy={y(value)}
-          r="6"
-          fill="#177968"
-          stroke="white"
-          strokeWidth="3"
-        />
-        <text x="30" y="216">
-          Today
-        </text>
-        <text x="740" y="216" textAnchor="end">
-          All targets hit
-        </text>
-      </svg>
-      <label className="range-label">
-        <span>Explore the scenario</span>
-        <input
-          aria-label="Target progress"
-          type="range"
-          min="0"
-          max="100"
-          value={progress}
-          onChange={(e) => setProgress(Number(e.target.value))}
-        />
-        <b>{progress}%</b>
-      </label>
-      <p className="fine-print">
-        Not a time forecast. Each underlying moves toward its own target;
-        options use fixed time-to-expiry and IV. The curve blends today&apos;s
-        mark into the option model. Holdings without targets stay at current
-        value.
-      </p>
-    </section>
-  );
-}
+import { useWorkspace } from "./studio/useWorkspace";
+import { CashModal } from "./studio/CashModal";
+import { Settings } from "./studio/Settings";
+import { PortfolioManager } from "./studio/PortfolioManager";
+import { Trajectory } from "./studio/Trajectory";
+import { Allocation } from "./studio/Allocation";
+import { Holdings } from "./studio/Holdings";
+import { Activity } from "./studio/Activity";
+import { ScenarioStudio } from "./studio/ScenarioStudio";
+import { Journal } from "./studio/Journal";
+import { Report } from "./studio/Report";
+import { OptionsExplorer } from "./studio/OptionsExplorer";
+import { CommandPalette, type CommandItem } from "./studio/CommandPalette";
+
+type View = "overview" | "studio" | "journal";
 export function InvestorDesk({ portfolioId }: { portfolioId?: string }) {
+  const router = useRouter();
   const [data, setData] = useState<DeskData | null>(null),
     [error, setError] = useState(""),
     [refreshing, setRefreshing] = useState(false),
+    [view, setView] = useState<View>("overview"),
     [tab, setTab] = useState("Holdings"),
     [filter, setFilter] = useState("ALL"),
-    [search, setSearch] = useState("");
-  const [modal, setModal] = useState<"create" | "cash" | "settings" | null>(
-      null,
-    ),
+    [search, setSearch] = useState(""),
+    [quality, setQuality] = useState("ALL"),
+    [method, setMethod] = useState<"model" | "intrinsic">("model");
+  const [modal, setModal] = useState<
+      "create" | "cash" | "settings" | "manager" | "portfolio-picker" | null
+    >(null),
     [target, setTarget] = useState<Holding | null>(null),
     [ticket, setTicket] = useState<{
       portfolio: Portfolio;
       holding?: Holding;
     } | null>(null),
-    [toast, setToast] = useState("");
+    [detail, setDetail] = useState<Holding | null>(null),
+    [report, setReport] = useState(false),
+    [command, setCommand] = useState(false),
+    [mobileNav, setMobileNav] = useState(false),
+    [toast, setToast] = useState(""),
+    [expandedNotice, setExpandedNotice] = useState(false),
+    [presentation, setPresentation] = useState(false),
+    [showArchived, setShowArchived] = useState(false),
+    [journalSymbol, setJournalSymbol] = useState("");
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const media = matchMedia("(max-width:760px)");
+    const update = () => setIsMobile(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
+  useEffect(() => {
+    if (!mobileNav || !isMobile) return;
+    const old = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const nav = document.querySelector<HTMLElement>(".sidebar");
+    const trigger = document.activeElement as HTMLElement | null;
+    nav?.querySelector<HTMLElement>("a,button")?.focus();
+    const key = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setMobileNav(false);
+      }
+      if (e.key === "Tab") {
+        const els = [
+          ...nav!.querySelectorAll<HTMLElement>(
+            "a[href],button:not(:disabled)",
+          ),
+        ].filter((el) => el.getBoundingClientRect().height > 0);
+        const first = els[0],
+          last = els.at(-1);
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last?.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first?.focus();
+        }
+      }
+    };
+    window.addEventListener("keydown", key);
+    return () => {
+      document.body.style.overflow = old;
+      window.removeEventListener("keydown", key);
+      trigger?.focus();
+    };
+  }, [mobileNav, isMobile]);
   const inFlight = useRef(false),
     mounted = useRef(true);
   const load = useCallback(async () => {
@@ -221,6 +145,11 @@ export function InvestorDesk({ portfolioId }: { portfolioId?: string }) {
       if (mounted.current) {
         setData(d);
         setError("");
+        setTicket((old) => {
+          if (!old) return null;
+          const p = d.portfolios.find((p) => p.id === old.portfolio.id);
+          return p ? { ...old, portfolio: p } : null;
+        });
       }
     } catch (e) {
       if (mounted.current) setError((e as Error).message);
@@ -232,7 +161,7 @@ export function InvestorDesk({ portfolioId }: { portfolioId?: string }) {
   useEffect(() => {
     mounted.current = true;
     void load();
-    const t = setInterval(() => {
+    const interval = setInterval(() => {
       if (document.visibilityState === "visible") void load();
     }, 15000);
     const show = () => {
@@ -241,89 +170,167 @@ export function InvestorDesk({ portfolioId }: { portfolioId?: string }) {
     document.addEventListener("visibilitychange", show);
     return () => {
       mounted.current = false;
-      clearInterval(t);
+      clearInterval(interval);
       document.removeEventListener("visibilitychange", show);
     };
   }, [load]);
+  useEffect(() => {
+    const q = new URLSearchParams(location.search).get("view");
+    if (q === "studio" || q === "journal") setView(q);
+  }, []);
   useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(""), 5000);
     return () => clearTimeout(t);
   }, [toast]);
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        if (!document.querySelector("dialog[open]")) setCommand((v) => !v);
+      }
+      if (e.key === "Escape" && presentation) setPresentation(false);
+    };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, [presentation]);
+  const workspace = useWorkspace(data?.user?.id ?? "guest"),
+    prefs = workspace.preferences;
   const all = data?.portfolios ?? [],
     active = all.find((p) => p.id === portfolioId),
-    selected = portfolioId ? all.filter((p) => p.id === portfolioId) : all;
-  const holdings = selected.flatMap((p) => p.positions),
+    selected = useMemo(
+      () =>
+        portfolioId
+          ? (data?.portfolios ?? []).filter((p) => p.id === portfolioId)
+          : (data?.portfolios ?? []),
+      [data?.portfolios, portfolioId],
+    ),
+    holdings = useMemo(
+      () => selected.flatMap((p) => p.positions),
+      [data, portfolioId],
+    );
+  const cash = selected.reduce((s, p) => s + p.cashBalance, 0),
     current = selected.reduce((s, p) => s + p.currentValue, 0),
-    cash = selected.reduce((s, p) => s + p.cashBalance, 0),
-    projected = selected.reduce((s, p) => s + p.projectedNetWorth, 0),
+    assets = useMemo(() => holdings.map(assetFromHolding), [holdings]),
+    projected = totalAt(assets, cash, 1, method),
     equities = selected.reduce((s, p) => s + p.equitiesValue, 0),
     options = selected.reduce((s, p) => s + p.optionsValue, 0),
-    intrinsic = selected.reduce((s, p) => s + p.intrinsicNetWorth, 0),
     targetCount = holdings.filter((h) => h.projection.hasTarget).length;
   const filtered = holdings.filter(
     (h) =>
-      (filter === "ALL" || h.assetClass === filter) &&
-      `${h.symbol} ${h.optionDetails?.underlying ?? ""}`
+      (filter === "ALL" ||
+        filter === h.assetClass ||
+        (filter.startsWith("SYMBOL:") &&
+          (h.optionDetails?.underlying ?? h.symbol) === filter.slice(7))) &&
+      (quality === "ALL" ||
+        (quality === "MISSING" && !h.projection.hasTarget) ||
+        (quality === "STALE" &&
+          (h.projection.quoteStale || h.projection.priceEstimated))) &&
+      `${h.symbol} ${h.optionDetails?.underlying ?? ""} ${all.find((p) => p.id === h.portfolioId)?.name ?? ""}`
         .toLowerCase()
         .includes(search.toLowerCase()),
   );
-  const saved = () => {
+  const sortedPortfolios = [...all].sort(
+    (a, b) =>
+      Number(prefs.pinned.includes(b.id)) -
+        Number(prefs.pinned.includes(a.id)) ||
+      (prefs.order.indexOf(a.id) < 0 ? 999 : prefs.order.indexOf(a.id)) -
+        (prefs.order.indexOf(b.id) < 0 ? 999 : prefs.order.indexOf(b.id)),
+  );
+  const notify = (message = "Portfolio updated") => {
     void load();
-    setToast("Portfolio updated");
+    setToast(message);
+  };
+  const changeView = (v: View) => {
+    setView(v);
+    setMobileNav(false);
+    const url = new URL(location.href);
+    url.searchParams.set("view", v);
+    window.history.replaceState(null, "", url);
   };
   const trade = () => {
-    const p = active ?? all[0];
-    if (p) setTicket({ portfolio: p });
-    else setModal("create");
+    if (active) setTicket({ portfolio: active });
+    else if (all.length === 1) setTicket({ portfolio: all[0] });
+    else setModal(all.length ? "portfolio-picker" : "create");
   };
-  function exportCsv() {
-    const rows = [
-      [
-        "Portfolio",
-        "Instrument",
-        "Asset class",
-        "Quantity",
-        "Average cost",
-        "Current value",
-        "Target price",
-        "Projected model value",
-        "Intrinsic value",
-        "Quote source",
-      ],
-      ...holdings.map((h) => [
-        all.find((p) => p.id === h.portfolioId)?.name ?? "",
-        h.symbol,
-        h.assetClass,
-        h.quantity,
-        h.avgCost,
-        h.projection.currentMarketValue,
-        h.projection.targetUnderlyingPrice ?? "",
-        h.projection.projectedValue,
-        h.projection.optionIntrinsicProjectedValue ?? "",
-        h.projection.quoteSource,
-      ]),
-    ];
-    const csv = rows
-      .map((r) =>
-        r
-          .map(
-            (v) =>
-              `"${String(typeof v === "string" && /^[=+@-]/.test(v) ? "'" + v : v).replaceAll('"', '""')}"`,
-          )
-          .join(","),
-      )
-      .join("\r\n");
-    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "investor-desk-holdings.csv";
-    a.click();
-    URL.revokeObjectURL(url);
-  }
+  const sell = (h: Holding) => {
+    const p = all.find((p) => p.id === h.portfolioId);
+    if (p) setTicket({ portfolio: p, holding: h });
+  };
+  const clearFilters = () => {
+    setFilter("ALL");
+    setSearch("");
+    setQuality("ALL");
+  };
+  const navigatePortfolio = (p: Portfolio) => {
+    setMobileNav(false);
+    setView("overview");
+    router.push(`/portfolios/${p.id}`);
+  };
+  const commands: CommandItem[] = [
+    {
+      id: "overview",
+      label: "Portfolio overview",
+      detail: "See your current and target values",
+      run: () => changeView("overview"),
+    },
+    {
+      id: "studio",
+      label: "Scenario studio",
+      detail: "Compare your possibilities",
+      run: () => changeView("studio"),
+    },
+    {
+      id: "journal",
+      label: "Thesis journal",
+      detail: "Notes and evidence behind your targets",
+      run: () => changeView("journal"),
+    },
+    {
+      id: "create",
+      label: "Create a portfolio",
+      run: () => setModal("create"),
+    },
+    { id: "order", label: "New simulated order", run: trade },
+    {
+      id: "report",
+      label: "Export investment brief",
+      run: () => setReport(true),
+    },
+    {
+      id: "settings",
+      label: "Appearance & data settings",
+      run: () => setModal("settings"),
+    },
+    ...all.map((p) => ({
+      id: p.id,
+      label: p.name,
+      detail: "Portfolio",
+      run: () => navigatePortfolio(p),
+    })),
+    ...holdings.map((h) => ({
+      id: h.id,
+      label: h.optionDetails?.underlying ?? h.symbol,
+      detail: h.optionDetails
+        ? `${h.optionDetails.right} · ${h.optionDetails.expiration.slice(0, 10)}`
+        : "Holding",
+      run: () => setDetail(h),
+    })),
+  ];
+  const headerTitle =
+    view === "studio"
+      ? "Scenario studio"
+      : view === "journal"
+        ? "Thesis journal"
+        : (active?.name ?? "Portfolio overview");
   return (
-    <div className="desk-shell">
-      <aside className="sidebar">
+    <div
+      className={`desk-shell ${mobileNav ? "nav-open" : ""} ${prefs.privacy ? "privacy-mode" : ""} ${presentation ? "presentation-mode" : ""}`}
+    >
+      <a href="#workspace-main" className="skip-to-main">
+        Skip to workspace
+      </a>
+      <aside className="sidebar" inert={isMobile && !mobileNav}>
         <Link href="/" className="brand">
           <span className="brand-mark">
             <BarChart3 size={22} />
@@ -333,583 +340,856 @@ export function InvestorDesk({ portfolioId }: { portfolioId?: string }) {
             <small>THE BIGGER PICTURE</small>
           </span>
         </Link>
-        <div className="workspace-label">Your workspace</div>
-        <Link href="/" className={`nav-item ${!portfolioId ? "active" : ""}`}>
-          <LayoutDashboard size={18} />
-          Overview
-        </Link>
+        <button
+          className="icon-button mobile-nav-close"
+          aria-label="Close navigation"
+          onClick={() => setMobileNav(false)}
+        >
+          <X size={22} />
+        </button>
+        <button className="sidebar-search" onClick={() => setCommand(true)}>
+          <Search size={17} />
+          <span>Search the desk</span>
+          <kbd>⌘ K</kbd>
+        </button>
+        <div className="workspace-label">YOUR WORKSPACE</div>
+        <nav aria-label="Workspace navigation">
+          {[
+            { id: "overview", label: "Overview", icon: LayoutDashboard },
+            { id: "studio", label: "Scenario studio", icon: GitCompareArrows },
+            { id: "journal", label: "Thesis journal", icon: BookOpen },
+          ].map((n) => (
+            <button
+              key={n.id}
+              className={`nav-item ${view === n.id ? "active" : ""}`}
+              aria-current={view === n.id ? "page" : undefined}
+              onClick={() => changeView(n.id as View)}
+            >
+              <n.icon size={18} />
+              {n.label}
+            </button>
+          ))}
+        </nav>
         <div className="nav-section-label">
           <span>PORTFOLIOS</span>
-          <button
-            aria-label="Create portfolio"
-            onClick={() => setModal("create")}
-          >
-            <Plus size={16} />
-          </button>
-        </div>
-        <nav className="portfolio-nav">
-          {all.map((p, i) => (
-            <Link
-              key={p.id}
-              href={`/portfolios/${p.id}`}
-              className={`nav-item ${active?.id === p.id ? "active" : ""}`}
+          <div>
+            <button
+              className="icon-button"
+              aria-label="Manage portfolios"
+              onClick={() => setModal("manager")}
+              disabled={!all.length}
             >
-              <span
-                className="portfolio-dot"
-                style={{ background: ["#89cdb8", "#cdab7c", "#96adca"][i % 3] }}
-              />
-              {p.name}
-              <ChevronRight size={14} />
-            </Link>
-          ))}
+              <MoreHorizontal size={17} />
+            </button>
+            <button
+              className="icon-button"
+              aria-label="Create portfolio"
+              onClick={() => setModal("create")}
+            >
+              <Plus size={17} />
+            </button>
+          </div>
+        </div>
+        <nav className="portfolio-nav" aria-label="Your portfolios">
+          {sortedPortfolios
+            .filter((p) => showArchived || !prefs.archived.includes(p.id))
+            .map((p) => (
+              <button
+                key={p.id}
+                className={`nav-item ${active?.id === p.id ? "portfolio-active" : ""}`}
+                onClick={() => navigatePortfolio(p)}
+              >
+                <span className="portfolio-dot" />
+                <span>{p.name}</span>
+                {prefs.pinned.includes(p.id) ? (
+                  <Pin size={12} />
+                ) : (
+                  <ChevronRight size={14} />
+                )}
+              </button>
+            ))}
           {!all.length && (
-            <span className="nav-empty">
-              Create your first portfolio
-              <br />
-              and start building your thesis.
-            </span>
+            <span className="nav-empty">A place for your first idea.</span>
           )}
         </nav>
-        <button
-          className="nav-item settings-link"
-          onClick={() => setModal("settings")}
-        >
-          <Settings2 size={18} />
-          Data & assumptions
-        </button>
-        <div className="sidebar-note">
-          <div className="orbital" />
-          <span>
-            A view beyond
-            <br />
-            the current price.
-          </span>
-          <p>
-            Build a portfolio.
-            <br />
-            Put your convictions in perspective.
-          </p>
-        </div>
-        <div className="local-label">
-          <span />
-          Local workspace<small>Single user · USD · Simulation</small>
+        {prefs.archived.length > 0 && (
+          <button
+            className="sidebar-text"
+            onClick={() => setShowArchived((v) => !v)}
+          >
+            {showArchived ? "Hide" : "Show"} archived portfolios
+          </button>
+        )}
+        <div className="sidebar-bottom">
+          <div className="sidebar-note">
+            <span>
+              A view beyond
+              <br />
+              the current price.
+            </span>
+            <p>Your ideas. A little perspective.</p>
+          </div>
+          <button className="nav-item" onClick={() => setModal("settings")}>
+            <Settings2 size={18} />
+            Data & preferences
+          </button>
+          <div className="sidebar-profile">
+            <span className="profile-avatar">
+              {(data?.user?.name ?? "Guest").slice(0, 1)}
+            </span>
+            <span>
+              <strong>{data?.user?.name ?? "Your guest desk"}</strong>
+              <small>
+                {data?.user ? "Saved local workspace" : "Temporary workspace"}
+              </small>
+            </span>
+          </div>
         </div>
       </aside>
-      <main className="main-desk">
+      {mobileNav && (
+        <button
+          className="nav-scrim"
+          aria-label="Close navigation"
+          onClick={() => setMobileNav(false)}
+        />
+      )}
+      <main
+        className="main-desk"
+        id="workspace-main"
+        inert={isMobile && mobileNav}
+      >
         <header className="topbar">
-          <div className="breadcrumb">
-            Workspace <ChevronRight size={14} />
-            <strong>{active?.name ?? "Overview"}</strong>
+          <div className="topbar-left">
+            <button
+              className="icon-button mobile-nav-toggle"
+              aria-label="Open workspace navigation"
+              aria-expanded={mobileNav}
+              onClick={() => setMobileNav(true)}
+            >
+              <Menu size={20} />
+            </button>
+            <div className="breadcrumb">
+              <button
+                onClick={() => {
+                  router.push("/dashboard");
+                  changeView("overview");
+                }}
+              >
+                Workspace
+              </button>
+              <ChevronRight size={13} />
+              <strong>
+                {active?.name ??
+                  (view === "overview" ? "Overview" : headerTitle)}
+              </strong>
+            </div>
           </div>
           <div className="topbar-right">
-            <span
+            <button
               className={`status-pill ${data?.mode === "demo" ? "sample" : ""}`}
+              onClick={() => setModal("settings")}
             >
               <span />
               {data?.mode === "demo"
                 ? "Sample data"
                 : data
-                  ? "Live provider mode"
+                  ? "Provider quotes"
                   : "Connecting"}
-            </span>
+            </button>
             <button
               className="icon-button"
               aria-label="Refresh portfolio"
-              onClick={load}
               disabled={refreshing}
+              onClick={load}
             >
               <RefreshCw size={16} className={refreshing ? "spin" : ""} />
             </button>
-            <span className="avatar">CL</span>
+            <button
+              className="icon-button desktop-only"
+              aria-label={
+                prefs.privacy ? "Show monetary values" : "Mask monetary values"
+              }
+              onClick={() =>
+                workspace
+                  .save("preferences", { ...prefs, privacy: !prefs.privacy })
+                  .catch((e) => setError(e.message))
+              }
+            >
+              {prefs.privacy ? <EyeOff size={17} /> : <Eye size={17} />}
+            </button>
+            {data?.user ? (
+              <button
+                className="text-button"
+                onClick={async () => {
+                  const result = await authClient.signOut();
+                  if (result.error) {
+                    setError("Sign out failed. Please retry.");
+                    return;
+                  }
+                  window.location.assign("/dashboard");
+                }}
+              >
+                Sign out
+              </button>
+            ) : (
+              <Link className="text-button" href="/sign-in">
+                Sign in
+                <ArrowUpRight size={14} />
+              </Link>
+            )}
           </div>
+          <AmbientRadioControls />
         </header>
         <div className="desk-content">
           <div className="page-heading">
             <div>
               <span className="eyebrow">YOUR CAPITAL. YOUR CONVICTION.</span>
               <h1>
-                {active?.name ?? "Portfolio overview"}
+                {headerTitle}
                 <span className="heading-dot">.</span>
               </h1>
-              <p>Understand where you stand. Explore where you could go.</p>
+              <p>
+                {view === "overview"
+                  ? "A clearer view of where you stand. And what could come next."
+                  : view === "studio"
+                    ? "Explore a different future, one assumption at a time."
+                    : "Keep the thinking that makes the numbers meaningful."}
+              </p>
             </div>
             <div className="heading-actions">
+              {all.length > 0 && (
+                <button
+                  className="button secondary"
+                  onClick={() => setReport(true)}
+                >
+                  <Download size={16} />
+                  Investment brief
+                </button>
+              )}
               <button
-                className="button secondary"
-                onClick={() => setModal(active ? "cash" : "create")}
+                className="button primary"
+                onClick={all.length ? trade : () => setModal("create")}
               >
                 <Plus size={17} />
-                {active ? "Manage cash" : "New portfolio"}
-              </button>
-              <button className="button primary" onClick={trade}>
-                <ArrowUpRight size={18} />
-                New order
+                {all.length ? "New order" : "Create portfolio"}
               </button>
             </div>
           </div>
-          {error && (
+          {(error || workspace.error) && (
             <div className="error-box" role="alert">
-              <AlertCircle size={18} />
-              {error}
-              <button className="text-button" onClick={load}>
-                Retry connection
-              </button>
-            </div>
-          )}
-          {portfolioId && data && !active && (
-            <div className="error-box">
-              Portfolio not found. <Link href="/">Return to overview</Link>
-            </div>
-          )}
-          {data?.mode === "demo" && (
-            <div className="data-notice">
-              <span className="badge amber">SAMPLE MODE</span>
-              <span>
-                Explore the complete simulator with illustrative prices. No real
-                money, no real orders.
-              </span>
-              <button onClick={() => setModal("settings")}>
-                Connect market data
-                <ArrowRight size={14} />
-              </button>
-            </div>
-          )}
-          {data?.mode === "live" &&
-            (!data.feeds.equities || !data.feeds.options) && (
-              <div className="error-box">
-                Some market-data credentials are missing.{" "}
-                <button
-                  className="text-button"
-                  onClick={() => setModal("settings")}
-                >
-                  View setup
-                </button>
-              </div>
-            )}
-          {data?.mode === "live" && data.feeds.equityFeed === "iex" && (
-            <div className="data-notice">
-              <span className="badge amber">IEX ONLY</span>
-              <span>
-                Stock quotes represent one exchange, not consolidated SIP
-                coverage.
-              </span>
-            </div>
-          )}
-          <section className="net-worth-hero">
-            <div className="hero-main">
-              <span className="eyebrow">
-                PROJECTED NET WORTH <Target size={14} />
-              </span>
-              <div className="hero-value">
-                {data ? money(projected, 0) : "Loading..."}
-              </div>
-              <div className="hero-growth">
-                <span
-                  className={
-                    projected >= current ? "positive-tag" : "negative-tag"
-                  }
-                >
-                  <ArrowUpRight size={15} />
-                  {current
-                    ? `${((projected / current - 1) * 100).toFixed(1)}%`
-                    : "0%"}
-                </span>
-                <span>
-                  {money(projected - current, 0)} potential change from today
-                </span>
-              </div>
-              <p>If every holding reaches its own target, simultaneously.</p>
-            </div>
-            <div className="hero-aside">
-              <span className="hero-icon">
-                <Target size={24} />
-              </span>
-              <strong>
-                {targetCount}
-                <span> / {holdings.length}</span>
-              </strong>
-              <span>holdings with a target</span>
-              <div className="coverage-track">
-                <i
-                  style={{
-                    width: `${holdings.length ? (targetCount / holdings.length) * 100 : 0}%`,
-                  }}
-                />
-              </div>
-              <small>Untargeted holdings retain current value.</small>
-            </div>
-          </section>
-          <div className="metrics-grid">
-            {[
-              {
-                label: "Total account value",
-                value: current,
-                icon: Wallet,
-                detail: `${selected.length} ${selected.length === 1 ? "portfolio" : "portfolios"}`,
-              },
-              {
-                label: "Available cash",
-                value: cash,
-                icon: Building2,
-                detail: "Ready to invest",
-              },
-              {
-                label: "Equities & ETFs",
-                value: equities,
-                icon: BarChart3,
-                detail: `${holdings.filter((h) => h.assetClass === "EQUITY").length} positions`,
-              },
-              {
-                label: "Options value",
-                value: options,
-                icon: Layers,
-                detail: `${holdings.filter((h) => h.assetClass === "OPTION").length} positions`,
-              },
-            ].map((m) => (
-              <section className="metric-card" key={m.label}>
-                <div>
-                  <span>{m.label}</span>
-                  <m.icon size={17} />
-                </div>
-                <strong>{money(m.value, 0)}</strong>
-                <small>{m.detail}</small>
-              </section>
-            ))}
-          </div>
-          {!active && all.length > 0 && (
-            <section className="portfolio-strip">
-              {all.map((p) => (
-                <Link key={p.id} href={`/portfolios/${p.id}`}>
-                  <span className="portfolio-card-icon">
-                    <Wallet size={19} />
-                  </span>
-                  <div>
-                    <strong>{p.name}</strong>
-                    <small>
-                      {p.positions.length} positions · {money(p.cashBalance, 0)}{" "}
-                      cash
-                    </small>
-                  </div>
-                  <div className="portfolio-card-total">
-                    <strong>{money(p.currentValue, 0)}</strong>
-                    <small>{compact(p.projectedNetWorth)} at targets</small>
-                  </div>
-                  <ChevronRight size={16} />
-                </Link>
-              ))}
-            </section>
-          )}
-          <div className="analysis-grid">
-            <Trajectory
-              positions={holdings}
-              cash={cash}
-              current={current}
-              projected={projected}
-            />
-            <section className="panel allocation-panel">
-              <div className="section-heading">
-                <div>
-                  <span className="eyebrow">The composition</span>
-                  <h2>Capital allocation</h2>
-                </div>
-              </div>
-              <div
-                className="allocation-ring"
-                style={{
-                  background: `conic-gradient(#177968 0 ${current ? (equities / current) * 100 : 0}%, #bc805f ${current ? (equities / current) * 100 : 0}% ${current ? ((equities + options) / current) * 100 : 0}%, #dfe6df 0 100%)`,
-                }}
-              >
-                <div>
-                  <small>INVESTED</small>
-                  <strong>
-                    {current
-                      ? Math.round(((equities + options) / current) * 100)
-                      : 0}
-                    %
-                  </strong>
-                </div>
-              </div>
-              <div className="allocation-legend">
-                {[
-                  ["Equities / ETFs", equities, "#177968"],
-                  ["Options", options, "#bc805f"],
-                  ["Cash", cash, "#dfe6df"],
-                ].map(([label, v, color]) => (
-                  <div key={label}>
-                    <i style={{ background: String(color) }} />
-                    <span>{label}</span>
-                    <strong>{money(Number(v), 0)}</strong>
-                  </div>
-                ))}
-              </div>
-              <div className="intrinsic-total">
-                <span>Net worth at intrinsic targets</span>
-                <strong>{money(intrinsic, 0)}</strong>
-                <small>Equities at targets + option intrinsic + cash.</small>
-              </div>
-            </section>
-          </div>
-          <section className="panel holdings-panel">
-            <div className="holdings-toolbar">
-              <div className="tabs">
-                {["Holdings", "Activity"].map((t) => (
-                  <button
-                    key={t}
-                    className={tab === t ? "active" : ""}
-                    onClick={() => setTab(t)}
-                  >
-                    {t}
-                    {t === "Holdings" && <span>{holdings.length}</span>}
-                  </button>
-                ))}
-              </div>
+              {error || workspace.error}
               <button
                 className="text-button"
-                onClick={exportCsv}
-                disabled={!holdings.length}
+                onClick={() => {
+                  void load();
+                  void workspace.reload();
+                }}
               >
-                <Download size={15} />
-                Export holdings
+                Retry
               </button>
             </div>
-            {tab === "Holdings" ? (
-              <>
-                <div className="table-filters">
-                  <div className="filter-pills">
+          )}
+          {data && !data.user && (
+            <div className="workspace-status">
+              <span className="status-identity">
+                <span className="status-dot" />
+                Guest workspace <span className="status-divider">/</span>{" "}
+                Temporary
+              </span>
+              <button
+                className="text-button status-detail"
+                aria-expanded={expandedNotice}
+                onClick={() => setExpandedNotice((v) => !v)}
+              >
+                What gets saved?
+              </button>
+              <Link className="status-save" href="/sign-up">
+                {all.length ? "Save my portfolios" : "Create a profile"}
+                <ArrowRight size={15} />
+              </Link>
+              {expandedNotice && (
+                <p>
+                  Refreshes are safe. Guest portfolios, scenarios, and notes are
+                  temporary until you save them to a profile. Ending your
+                  browser session, restarting the server, or 24 hours of
+                  inactivity can clear unsaved work.
+                </p>
+              )}
+            </div>
+          )}
+          {data?.guest?.expired && (
+            <div className="error-box" role="status">
+              Your previous guest session ended. Saved profile portfolios are
+              unaffected.
+            </div>
+          )}
+          {data?.user &&
+            Boolean(
+              data.pendingGuest?.portfolioCount ||
+              data.pendingGuest?.entryCount,
+            ) && (
+              <div className="workspace-status">
+                <span>Guest work is ready to save to this profile.</span>
+                <Link href="/sign-up" className="text-button">
+                  Save guest workspace
+                  <ArrowRight size={15} />
+                </Link>
+              </div>
+            )}
+          {!data ? (
+            <div
+              className="workspace-skeleton"
+              aria-label="Loading workspace"
+              role="status"
+            >
+              <div />
+              <div />
+              <div />
+            </div>
+          ) : portfolioId && !active ? (
+            <div className="empty-state">
+              <h2>This portfolio isn’t available.</h2>
+              <p>Return to your overview to open another portfolio.</p>
+              <Link className="button primary" href="/dashboard">
+                Back to overview
+              </Link>
+            </div>
+          ) : view === "studio" ? (
+            <ScenarioStudio portfolios={selected} workspace={workspace} />
+          ) : view === "journal" ? (
+            <Journal
+              workspace={workspace}
+              portfolios={selected}
+              initialSymbol={journalSymbol}
+            />
+          ) : (
+            <>
+              {!all.length ? (
+                <section className="welcome-desk">
+                  <div className="welcome-copy">
+                    <span className="eyebrow">
+                      A BLANK PAGE. A BIGGER PICTURE.
+                    </span>
+                    <h2>
+                      Your next idea
+                      <br />
+                      starts <em>here.</em>
+                    </h2>
+                    <p>
+                      Give your conviction a home. Build with virtual cash,
+                      explore your targets, and see your whole portfolio come
+                      into focus.
+                    </p>
+                    <button
+                      className="button primary"
+                      onClick={() => setModal("create")}
+                    >
+                      Create your first portfolio
+                      <ArrowUpRight size={18} />
+                    </button>
+                    <span className="welcome-assurance">
+                      <Check size={14} />
+                      No account needed. No real-money trades.
+                    </span>
+                  </div>
+                  <div className="onboarding-steps">
                     {[
-                      ["ALL", "All assets"],
-                      ["EQUITY", "Stocks / ETFs"],
-                      ["OPTION", "Options"],
-                    ].map(([k, label]) => (
+                      {
+                        n: "01",
+                        title: "Make room for an idea",
+                        text: "Name a portfolio and choose its virtual starting cash.",
+                        icon: Wallet,
+                      },
+                      {
+                        n: "02",
+                        title: "Build your position",
+                        text: "Explore stocks, ETFs, and standard long options.",
+                        icon: Layers,
+                      },
+                      {
+                        n: "03",
+                        title: "Give your thesis a target",
+                        text: "See what your holdings could become, together.",
+                        icon: Target,
+                      },
+                    ].map((s) => (
+                      <div key={s.n}>
+                        <span className="step-number">{s.n}</span>
+                        <div>
+                          <s.icon size={24} />
+                          <h3>{s.title}</h3>
+                          <p>{s.text}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              ) : (
+                <>
+                  <section className="net-worth-hero">
+                    <div className="hero-current">
+                      <span className="eyebrow">CURRENT PORTFOLIO VALUE</span>
+                      <div className="current-value private-value">
+                        {money(current, 0)}
+                      </div>
+                      <span className="muted">
+                        {selected.length}{" "}
+                        {selected.length === 1 ? "portfolio" : "portfolios"} ·{" "}
+                        {holdings.length}{" "}
+                        {holdings.length === 1 ? "holding" : "holdings"}
+                      </span>
+                    </div>
+                    <span className="hero-connector">
+                      <ArrowRight size={26} />
+                    </span>
+                    <div className="hero-main">
+                      <span className="eyebrow">
+                        {targetCount
+                          ? `AT YOUR ${method === "model" ? "MODEL" : "INTRINSIC"} TARGETS`
+                          : "A LITTLE CONVICTION GOES A LONG WAY"}
+                      </span>
+                      {targetCount ? (
+                        <>
+                          <div className="hero-value private-value">
+                            {money(projected, 0)}
+                          </div>
+                          <div className="hero-growth">
+                            <span
+                              className={
+                                projected >= current
+                                  ? "positive-tag"
+                                  : "negative-tag"
+                              }
+                            >
+                              {projected >= current ? (
+                                <ArrowUpRight size={15} />
+                              ) : (
+                                <ArrowDownRight size={15} />
+                              )}{" "}
+                              {current
+                                ? `${Math.abs((projected / current - 1) * 100).toFixed(1)}%`
+                                : "—"}
+                            </span>
+                            <span className="private-value">
+                              {money(projected - current, 0)} potential change
+                            </span>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <h2>
+                            {holdings.length
+                              ? "Where could it go?"
+                              : "Ready for your first holding."}
+                          </h2>
+                          <button
+                            className="text-button"
+                            onClick={() =>
+                              holdings.length ? setTarget(holdings[0]) : trade()
+                            }
+                          >
+                            {holdings.length
+                              ? "Set your first target"
+                              : "Add a holding"}
+                            <ArrowRight size={16} />
+                          </button>
+                        </>
+                      )}
+                    </div>
+                    <button
+                      className="hero-aside"
+                      onClick={() => {
+                        setQuality("MISSING");
+                        setTab("Holdings");
+                        document
+                          .getElementById("holdings-panel")
+                          ?.scrollIntoView({
+                            behavior: matchMedia(
+                              "(prefers-reduced-motion: reduce)",
+                            ).matches
+                              ? "auto"
+                              : "smooth",
+                            block: "start",
+                          });
+                      }}
+                      aria-label={`Review ${holdings.length - targetCount} holdings without targets`}
+                    >
+                      <Target size={21} />
+                      <strong>
+                        {targetCount}
+                        <span> / {holdings.length}</span>
+                      </strong>
+                      <span>holdings targeted</span>
+                      <div className="coverage-track">
+                        <i
+                          style={{
+                            width: `${holdings.length ? (targetCount / holdings.length) * 100 : 0}%`,
+                          }}
+                        />
+                      </div>
+                    </button>
+                  </section>
+                  <div className="metrics-grid">
+                    {[
+                      {
+                        label: "Available cash",
+                        value: cash,
+                        detail: active
+                          ? "Manage your virtual cash"
+                          : "Across selected portfolios",
+                        icon: Wallet,
+                        action: () =>
+                          active
+                            ? setModal("cash")
+                            : all.length === 1
+                              ? router.push(`/portfolios/${all[0].id}`)
+                              : setModal("manager"),
+                      },
+                      {
+                        label: "Equities & ETFs",
+                        value: equities,
+                        detail: `${holdings.filter((h) => h.assetClass === "EQUITY").length} positions`,
+                        icon: BarChart3,
+                        action: () => {
+                          setFilter("EQUITY");
+                          setTab("Holdings");
+                        },
+                      },
+                      {
+                        label: "Options value",
+                        value: options,
+                        detail: `${holdings.filter((h) => h.assetClass === "OPTION").length} positions`,
+                        icon: Layers,
+                        action: () => {
+                          setFilter("OPTION");
+                          setTab("Holdings");
+                        },
+                      },
+                    ].map((m) => (
                       <button
-                        key={k}
-                        className={filter === k ? "active" : ""}
-                        onClick={() => setFilter(k)}
+                        className="metric-card"
+                        key={m.label}
+                        onClick={() => {
+                          m.action();
+                          if (m.label !== "Available cash")
+                            document
+                              .getElementById("holdings-panel")
+                              ?.scrollIntoView({
+                                block: "start",
+                                behavior: matchMedia(
+                                  "(prefers-reduced-motion:reduce)",
+                                ).matches
+                                  ? "auto"
+                                  : "smooth",
+                              });
+                        }}
                       >
-                        {label}
+                        <div>
+                          <span>{m.label}</span>
+                          <m.icon size={18} />
+                        </div>
+                        <strong className="private-value">
+                          {money(m.value, 0)}
+                        </strong>
+                        <small>
+                          {m.detail}
+                          <ArrowUpRight size={13} />
+                        </small>
                       </button>
                     ))}
                   </div>
-                  <input
-                    aria-label="Filter holdings"
-                    placeholder="Filter by symbol..."
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                  />
-                </div>
-                {!filtered.length ? (
-                  <div className="empty-state">
-                    <span>
-                      <Layers size={28} />
-                    </span>
-                    <h3>
-                      {holdings.length
-                        ? "No matching holdings"
-                        : "Your next idea starts here."}
-                    </h3>
-                    <p>
-                      {holdings.length
-                        ? "Try a different symbol or asset filter."
-                        : "Add simulated stocks, ETFs, or options. Then set targets to see the bigger picture."}
-                    </p>
-                    {!holdings.length && (
-                      <button className="button primary" onClick={trade}>
-                        {all.length
-                          ? "Place your first order"
-                          : "Create your first portfolio"}
-                        <ArrowRight size={16} />
+                  {!active && all.length > 1 && (
+                    <section
+                      className="portfolio-strip"
+                      aria-label="Portfolio summary cards"
+                    >
+                      {sortedPortfolios
+                        .filter((p) => !prefs.archived.includes(p.id))
+                        .map((p) => (
+                          <button
+                            key={p.id}
+                            onClick={() => navigatePortfolio(p)}
+                          >
+                            <span className="portfolio-card-icon">
+                              <Wallet size={20} />
+                            </span>
+                            <div>
+                              <strong>{p.name}</strong>
+                              <small>
+                                {p.positions.length} holdings · {p.targetCount}{" "}
+                                targeted
+                              </small>
+                            </div>
+                            <div className="portfolio-card-total">
+                              <strong className="private-value">
+                                {money(p.currentValue, 0)}
+                              </strong>
+                              <small className="private-value">
+                                {money(p.projectedNetWorth, 0)} at targets
+                              </small>
+                            </div>
+                            <ChevronRight size={16} />
+                          </button>
+                        ))}
+                    </section>
+                  )}
+                  {holdings.length > 0 && (
+                    <div className="chart-grid">
+                      {targetCount ? (
+                        <Trajectory
+                          holdings={holdings}
+                          cash={cash}
+                          mode={method}
+                          setMode={setMethod}
+                          onStudio={() => changeView("studio")}
+                          onTarget={setTarget}
+                        />
+                      ) : (
+                        <section className="panel chart-empty">
+                          <span className="eyebrow">
+                            TURN A POSITION INTO A PERSPECTIVE
+                          </span>
+                          <div className="first-target-mark">
+                            <Target size={48} strokeWidth={1} />
+                          </div>
+                          <h2>Your holdings are just the beginning.</h2>
+                          <p>
+                            Set an underlying price or valuation target to
+                            reveal your portfolio’s hypothetical path.
+                          </p>
+                          <button
+                            className="button primary"
+                            onClick={() => setTarget(holdings[0])}
+                          >
+                            Set your first target
+                            <ArrowRight size={16} />
+                          </button>
+                        </section>
+                      )}
+                      <Allocation
+                        holdings={holdings}
+                        cash={cash}
+                        filter={filter}
+                        onFilter={(v) => {
+                          setFilter(v);
+                          setTab("Holdings");
+                        }}
+                      />
+                    </div>
+                  )}
+                  <section className="panel holdings-panel" id="holdings-panel">
+                    <div className="holdings-toolbar">
+                      <div
+                        className="tabs"
+                        role="tablist"
+                        aria-label="Portfolio details"
+                      >
+                        {["Holdings", "Activity"].map((t, i) => (
+                          <button
+                            key={t}
+                            id={`tab-${t}`}
+                            role="tab"
+                            aria-selected={tab === t}
+                            aria-controls={`panel-${t}`}
+                            tabIndex={tab === t ? 0 : -1}
+                            className={tab === t ? "active" : ""}
+                            onClick={() => setTab(t)}
+                            onKeyDown={(e) => {
+                              if (
+                                e.key === "ArrowRight" ||
+                                e.key === "ArrowLeft"
+                              ) {
+                                e.preventDefault();
+                                const next = i === 0 ? "Activity" : "Holdings";
+                                setTab(next);
+                                document.getElementById(`tab-${next}`)?.focus();
+                              }
+                            }}
+                          >
+                            {t}
+                            {t === "Holdings" && <span>{holdings.length}</span>}
+                          </button>
+                        ))}
+                      </div>
+                      <button
+                        className="text-button"
+                        disabled={!holdings.length}
+                        onClick={() => setReport(true)}
+                      >
+                        <Download size={15} />
+                        Export
                       </button>
-                    )}
-                  </div>
-                ) : (
-                  <div className="table-scroll">
-                    <table className="holdings-table">
-                      <thead>
-                        <tr>
-                          <th>Holding</th>
-                          <th>Quantity / cost</th>
-                          <th>Current value</th>
-                          <th>Unrealized P/L</th>
-                          <th>Underlying target</th>
-                          <th>At target</th>
-                          <th>Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filtered.map((h) => {
-                          const p = h.projection;
-                          return (
-                            <tr key={h.id}>
-                              <td>
-                                <div className="holding-name">
-                                  <span
-                                    className={`symbol-avatar ${h.assetClass === "OPTION" ? "option-avatar" : ""}`}
-                                  >
-                                    {(
-                                      h.optionDetails?.underlying ?? h.symbol
-                                    ).slice(0, 2)}
-                                  </span>
-                                  <div>
-                                    <strong>
-                                      {h.optionDetails?.underlying ?? h.symbol}
-                                      <span className="asset-label">
-                                        {h.assetClass === "OPTION"
-                                          ? h.optionDetails?.right
-                                          : "STOCK / ETF"}
-                                      </span>
-                                    </strong>
-                                    <small>
-                                      {h.optionDetails
-                                        ? `${money(Number(h.optionDetails.strike))} strike · ${h.optionDetails.expiration.slice(0, 10)}`
-                                        : all.find(
-                                            (p) => p.id === h.portfolioId,
-                                          )?.name}
-                                    </small>
-                                    <small
-                                      className={
-                                        p.quoteStale || p.priceEstimated
-                                          ? "warning-text"
-                                          : ""
-                                      }
-                                      title={
-                                        p.quoteAsOf ?? "No price available"
-                                      }
-                                    >
-                                      {p.priceEstimated
-                                        ? "Cost-basis estimate"
-                                        : p.quoteSource === "demo"
-                                          ? "Sample quote"
-                                          : `${p.quoteStale ? "Stale / market closed · " : ""}${p.quoteAsOf ? new Date(p.quoteAsOf).toLocaleString() : "Unavailable"}`}
-                                      {p.expired
-                                        ? " · Expired; not settled"
-                                        : ""}
-                                    </small>
-                                  </div>
-                                </div>
-                              </td>
-                              <td>
-                                <strong>
-                                  {num(h.quantity)}{" "}
-                                  {h.assetClass === "OPTION" ? "ct" : "sh"}
-                                </strong>
-                                <small>{money(h.avgCost)} avg</small>
-                              </td>
-                              <td>
-                                <strong>{money(p.currentMarketValue)}</strong>
-                                <small>
-                                  {money(p.currentPrice)}{" "}
-                                  {h.assetClass === "OPTION"
-                                    ? "premium"
-                                    : "per share"}
-                                </small>
-                              </td>
-                              <td>
-                                <strong
-                                  className={
-                                    p.unrealizedPnL >= 0
-                                      ? "positive"
-                                      : "negative"
-                                  }
-                                >
-                                  {p.unrealizedPnL >= 0 ? "+" : ""}
-                                  {money(p.unrealizedPnL)}
-                                </strong>
-                                <small>
-                                  {p.costBasis
-                                    ? (
-                                        (p.unrealizedPnL / p.costBasis) *
-                                        100
-                                      ).toFixed(2)
-                                    : "0"}
-                                  %
-                                </small>
-                              </td>
-                              <td>
+                    </div>
+                    <div
+                      id={`panel-${tab}`}
+                      role="tabpanel"
+                      aria-labelledby={`tab-${tab}`}
+                    >
+                      {tab === "Holdings" ? (
+                        <>
+                          <div className="table-filters">
+                            <div
+                              className="filter-pills"
+                              role="group"
+                              aria-label="Asset filter"
+                            >
+                              {[
+                                ["ALL", "All assets"],
+                                ["EQUITY", "Stocks / ETFs"],
+                                ["OPTION", "Options"],
+                              ].map(([k, label]) => (
                                 <button
-                                  className={`target-button ${p.hasTarget ? "has-target" : ""}`}
-                                  onClick={() => setTarget(h)}
+                                  key={k}
+                                  aria-pressed={filter === k}
+                                  className={filter === k ? "active" : ""}
+                                  onClick={() => setFilter(k)}
                                 >
-                                  <Target size={14} />
-                                  {p.hasTarget
-                                    ? money(p.targetUnderlyingPrice)
-                                    : "Set target"}
+                                  {label}
                                 </button>
-                                {h.targetScenario?.targetMode ===
-                                  "MARKET_CAP" && (
-                                  <small>
-                                    {compact(
-                                      Number(h.targetScenario.targetMarketCap),
-                                    )}{" "}
-                                    market cap
-                                  </small>
-                                )}
-                              </td>
-                              <td>
-                                <strong className="projected-cell">
-                                  {money(p.projectedValue)}
-                                </strong>
-                                <small>
-                                  {p.hasTarget
-                                    ? h.assetClass === "OPTION"
-                                      ? `${money(p.optionIntrinsicProjectedValue)} intrinsic${p.ivEstimated ? " · assumed IV" : ""}`
-                                      : "At your target"
-                                    : "No target / current value"}
-                                </small>
-                              </td>
-                              <td>
+                              ))}
+                            </div>
+                            <div className="table-search">
+                              <Search size={15} />
+                              <input
+                                aria-label="Filter holdings"
+                                placeholder="Symbol or portfolio…"
+                                value={search}
+                                onChange={(e) => setSearch(e.target.value)}
+                              />
+                              {search && (
                                 <button
-                                  className="text-button"
-                                  onClick={() =>
-                                    setTicket({
-                                      portfolio: all.find(
-                                        (p) => p.id === h.portfolioId,
-                                      )!,
-                                      holding: h,
-                                    })
-                                  }
+                                  className="icon-button"
+                                  aria-label="Clear holdings search"
+                                  onClick={() => setSearch("")}
                                 >
-                                  Sell
-                                  <ArrowUpRight size={14} />
+                                  <X size={14} />
                                 </button>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                      <tfoot>
-                        <tr>
-                          <td colSpan={2}>Holdings total</td>
-                          <td>{money(equities + options)}</td>
-                          <td colSpan={2}>Cash included in net worth above</td>
-                          <td>{money(projected - cash)}</td>
-                          <td />
-                        </tr>
-                      </tfoot>
-                    </table>
+                              )}
+                            </div>
+                            <select
+                              aria-label="Holding quality filter"
+                              value={quality}
+                              onChange={(e) => setQuality(e.target.value)}
+                            >
+                              <option value="ALL">
+                                All target / quote states
+                              </option>
+                              <option value="MISSING">Missing targets</option>
+                              <option value="STALE">
+                                Stale / estimated quotes
+                              </option>
+                            </select>
+                          </div>
+                          {(filter !== "ALL" ||
+                            quality !== "ALL" ||
+                            search) && (
+                            <div className="active-filter-bar">
+                              <span>
+                                {filter === "CASH"
+                                  ? "Cash allocation selected"
+                                  : `${filtered.length} of ${holdings.length} holdings`}
+                                {filter.startsWith("SYMBOL:")
+                                  ? ` · ${filter.slice(7)}`
+                                  : ""}
+                                {quality === "MISSING"
+                                  ? " · Missing targets"
+                                  : ""}
+                                {quality === "STALE"
+                                  ? " · Stale / estimated"
+                                  : ""}
+                              </span>
+                              <button
+                                className="text-button"
+                                onClick={clearFilters}
+                              >
+                                Clear filters
+                                <X size={13} />
+                              </button>
+                            </div>
+                          )}
+                          {filter === "CASH" ? (
+                            <div className="cash-filter">
+                              <Wallet size={25} />
+                              <span>Virtual cash across this view</span>
+                              <strong className="private-value">
+                                {money(cash)}
+                              </strong>
+                              <p>
+                                Cash is included in portfolio value and held
+                                constant in target scenarios.
+                              </p>
+                              <button
+                                className="button secondary"
+                                onClick={() =>
+                                  active
+                                    ? setModal("cash")
+                                    : setModal("manager")
+                                }
+                              >
+                                Manage portfolios
+                              </button>
+                            </div>
+                          ) : (
+                            <Holdings
+                              holdings={filtered}
+                              portfolios={selected}
+                              totalCount={holdings.length}
+                              onTarget={setTarget}
+                              onSell={sell}
+                              onDetail={setDetail}
+                              onClear={clearFilters}
+                              onTrade={trade}
+                            />
+                          )}
+                          <p className="table-footnote">
+                            {data.mode === "demo"
+                              ? "Illustrative sample prices"
+                              : "Provider quote timestamps appear in holding detail"}{" "}
+                            · Refreshed{" "}
+                            {new Date(data.asOf).toLocaleTimeString()} · Updates
+                            every 15 seconds while visible
+                          </p>
+                        </>
+                      ) : (
+                        <Activity portfolios={selected} />
+                      )}
+                    </div>
+                  </section>
+                  <div className="workspace-next">
+                    <div>
+                      <Sparkles size={21} />
+                      <span>
+                        <strong>There’s more than one bigger picture.</strong>
+                        <small>
+                          Save a scenario to explore a different set of
+                          assumptions.
+                        </small>
+                      </span>
+                    </div>
+                    <button
+                      className="text-button"
+                      onClick={() => changeView("studio")}
+                    >
+                      Open scenario studio
+                      <ArrowRight size={16} />
+                    </button>
                   </div>
-                )}
-              </>
-            ) : (
-              <ActivityTable portfolios={selected} />
-            )}
-            {holdings.some((h) => h.projection.priceEstimated) && (
-              <div className="table-footnote warning-text">
-                Some quotes are unavailable. Cost basis is used as an explicitly
-                estimated current value, not a live price.
-              </div>
-            )}
-            <div className="table-footnote">
-              Values refresh every 15 seconds while this tab is visible.{" "}
-              {data?.asOf
-                ? `Last refreshed ${new Date(data.asOf).toLocaleTimeString()}.`
-                : ""}
-            </div>
-          </section>
+                </>
+              )}
+            </>
+          )}
           <footer className="desk-footer">
             <span>
-              INVESTOR DESK <i>/</i> A clearer view of what could be.
+              INVESTOR DESK <i>/</i> A little perspective.
             </span>
-            <span>Hypothetical scenarios, not investment advice.</span>
+            <div>
+              <Link href="/methodology">Methodology</Link>
+              <Link href="/privacy">Privacy</Link>
+              <button onClick={() => setPresentation((v) => !v)}>
+                {presentation ? "Exit presentation" : "Presentation mode"}
+              </button>
+            </div>
+            <span>Simulated portfolios. Your own assumptions.</span>
           </footer>
         </div>
       </main>
@@ -917,96 +1197,87 @@ export function InvestorDesk({ portfolioId }: { portfolioId?: string }) {
         <div className="toast" role="status">
           <Check size={18} />
           {toast}
+          <button
+            className="icon-button"
+            aria-label="Dismiss confirmation"
+            onClick={() => setToast("")}
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
+      {presentation && (
+        <div className="presentation-exit">
+          <DialogRadioControl />
+          <button
+            className="button secondary"
+            onClick={() => setPresentation(false)}
+          >
+            Exit presentation
+            <X size={16} />
+          </button>
         </div>
       )}
       {modal === "create" && (
-        <CashModal close={() => setModal(null)} saved={saved} />
-      )}{" "}
+        <CashModal
+          close={() => setModal(null)}
+          saved={(id) => {
+            notify("Your portfolio is ready");
+            if (id) router.push(`/portfolios/${id}`);
+          }}
+        />
+      )}
       {modal === "cash" && active && (
         <CashModal
           portfolio={active}
           close={() => setModal(null)}
-          saved={saved}
+          saved={() => notify("Virtual cash updated")}
         />
-      )}{" "}
+      )}
       {modal === "settings" && (
+        <Settings
+          data={data}
+          workspace={workspace}
+          close={() => setModal(null)}
+        />
+      )}
+      {modal === "manager" && (
+        <PortfolioManager
+          portfolios={all}
+          workspace={workspace}
+          close={() => setModal(null)}
+          saved={() => void load()}
+        />
+      )}
+      {modal === "portfolio-picker" && (
         <DeskModal
-          title="Data & assumptions"
-          kicker="Know what powers your numbers"
+          title="Choose a portfolio"
+          kicker="Give this order a destination"
           close={() => setModal(null)}
         >
-          <div className="modal-body settings-body">
-            <div className="info-box">
-              Current mode:{" "}
-              <strong>
-                {data?.mode === "demo"
-                  ? "Sample data, not live prices"
-                  : "Live provider adapters"}
-              </strong>
-              . All orders are simulated in either mode.
-            </div>
-            <h3>Connect live market data</h3>
-            <p>
-              Edit your local <code>.env</code> and restart the app. Keys stay
-              server-side and are excluded from GitHub.
-            </p>
-            <pre>
-              MARKET_DATA_MODE=live
-              <br />
-              ALPACA_API_KEY=...
-              <br />
-              ALPACA_API_SECRET=...
-              <br />
-              ALPACA_FEED=sip
-              <br />
-              OPTIONS_PROVIDER=alpaca
-              <br />
-              ALPHAVANTAGE_API_KEY=...
-            </pre>
-            <p>
-              Alpaca IEX covers one exchange, not the consolidated tape. SIP and
-              real-time options require provider entitlements. Tradier sandbox
-              quotes are delayed. Stale or delayed quotes remain visible but
-              cannot execute orders.
-            </p>
-            <p>
-              For the original hybrid setup use OPTIONS_PROVIDER=tradier and add
-              TRADIER_API_TOKEN. Alpaca reference endpoints default to
-              paper-api.alpaca.markets; live-account keys need
-              ALPACA_REFERENCE_BASE_URL=https://api.alpaca.markets. Only
-              read-only reference endpoints are used.
-            </p>
-            <MarketDataCheck />
-            <h3>Projection assumptions</h3>
-            <ul>
-              <li>
-                Every target is hit simultaneously, not at a predicted future
-                date.
-              </li>
-              <li>
-                Market-cap targets divide valuation by shares outstanding.
-                Manual overrides take priority.
-              </li>
-              <li>
-                Options use a standard 100-share multiplier. Black-Scholes
-                assumes 4% risk-free interest and no dividends; it does not
-                model early exercise.
-              </li>
-              <li>
-                Provider IV is used when available; otherwise 60% is clearly
-                labeled as an assumption. Expired option projections use target
-                intrinsic value, not actual settlement.
-              </li>
-              <li>
-                Shorting, margin, adjusted contracts, automatic exercise,
-                corporate actions, and resting orders are not supported.
-              </li>
-            </ul>
-            <p className="fine-print">
-              Sample mode supports TSLA, BTG, AAPL, NVDA, MSFT, AMZN, GOOGL,
-              JPM, V, SPY, QQQ, and VOO. Sample figures and sample shares
-              outstanding are invented fixtures, not current financial data.
-            </p>
+          <div className="modal-body portfolio-picker">
+            {all.map((p) => (
+              <button
+                key={p.id}
+                onClick={() => {
+                  setTicket({ portfolio: p });
+                  setModal(null);
+                }}
+              >
+                <span className="portfolio-card-icon">
+                  <Wallet size={21} />
+                </span>
+                <span>
+                  <strong>{p.name}</strong>
+                  <small>{money(p.cashBalance)} available virtual cash</small>
+                </span>
+                <ArrowRight size={18} />
+              </button>
+            ))}
+            <button className="text-button" onClick={() => setModal("create")}>
+              <Plus size={15} />
+              Create another portfolio
+            </button>
           </div>
         </DeskModal>
       )}
@@ -1015,207 +1286,177 @@ export function InvestorDesk({ portfolioId }: { portfolioId?: string }) {
           holding={target}
           mode={data?.mode ?? "demo"}
           close={() => setTarget(null)}
-          saved={saved}
+          saved={(message) =>
+            notify(
+              message ??
+                `${target.optionDetails?.underlying ?? target.symbol} target saved`,
+            )
+          }
         />
-      )}{" "}
+      )}
       {ticket && (
         <OrderTicket
           portfolio={ticket.portfolio}
           holding={ticket.holding}
           mode={data?.mode ?? "demo"}
+          connectData={() => setModal("settings")}
           close={() => setTicket(null)}
-          saved={saved}
+          saved={() => notify("Simulated order filled")}
+          onSetTarget={async (positionId) => {
+            try {
+              const fresh = await api<DeskData>("/api/desk");
+              setData(fresh);
+              const h = fresh.portfolios
+                .flatMap((p) => p.positions)
+                .find((h) => h.id === positionId);
+              setTicket(null);
+              if (h) setTarget(h);
+            } catch (e) {
+              setError((e as Error).message);
+            }
+          }}
         />
       )}
-    </div>
-  );
-}
-function CashModal({
-  portfolio,
-  close,
-  saved,
-}: {
-  portfolio?: Portfolio;
-  close: () => void;
-  saved: () => void;
-}) {
-  const [name, setName] = useState(""),
-    [amount, setAmount] = useState(portfolio ? "" : "250000"),
-    [type, setType] = useState("DEPOSIT"),
-    [note, setNote] = useState(""),
-    [error, setError] = useState(""),
-    [busy, setBusy] = useState(false);
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    setBusy(true);
-    setError("");
-    try {
-      await api(
-        portfolio ? `/api/portfolios/${portfolio.id}/cash` : "/api/portfolios",
-        "POST",
-        portfolio
-          ? { type, amount: Number(amount), note }
-          : { name, startingCash: Number(amount) },
-      );
-      saved();
-      close();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
-  return (
-    <DeskModal
-      title={portfolio ? "Manage cash" : "Create a portfolio"}
-      kicker={portfolio?.name ?? "A new space for your investments"}
-      close={close}
-      busy={busy}
-    >
-      <form className="modal-body" onSubmit={submit}>
-        {portfolio ? (
-          <>
-            <div className="scenario-preview">
-              <span>Available cash</span>
-              <strong>{money(portfolio.cashBalance)}</strong>
+      {detail && (
+        <DeskModal
+          title={detail.optionDetails?.underlying ?? detail.symbol}
+          kicker="Holding detail / your conviction"
+          wide
+          close={() => setDetail(null)}
+        >
+          <div className="modal-body holding-detail">
+            <div className="holding-detail-value">
+              <span>Current holding value</span>
+              <strong>{money(detail.projection.currentMarketValue)}</strong>
+              <span
+                className={
+                  detail.projection.unrealizedPnL >= 0 ? "positive" : "negative"
+                }
+              >
+                {money(detail.projection.unrealizedPnL)} unrealized
+              </span>
             </div>
-            <label>
-              Cash action
-              <select value={type} onChange={(e) => setType(e.target.value)}>
-                <option value="DEPOSIT">Deposit simulated cash</option>
-                <option value="WITHDRAWAL">Withdraw simulated cash</option>
-              </select>
-            </label>
-          </>
-        ) : (
-          <label>
-            Portfolio name
-            <input
-              autoFocus
-              required
-              maxLength={80}
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Personal"
-            />
-          </label>
-        )}
-        <label>
-          {portfolio ? "Amount ($)" : "Starting cash ($)"}
-          <input
-            required
-            type="number"
-            min={portfolio ? 0.01 : 0}
-            max="1000000000000"
-            step="0.01"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-          />
-        </label>
-        {portfolio && (
-          <label>
-            Note (optional)
-            <input
-              maxLength={240}
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder="Monthly allocation"
-            />
-          </label>
-        )}
-        <p className="muted">
-          Each portfolio has its own cash balance. This is simulated funding,
-          not a real transfer.
-        </p>
-        {error && (
-          <div className="error-box" role="alert">
-            {error}
+            <dl className="detail-list">
+              <div>
+                <dt>Portfolio</dt>
+                <dd>{all.find((p) => p.id === detail.portfolioId)?.name}</dd>
+              </div>
+              <div>
+                <dt>Quantity</dt>
+                <dd>
+                  {num(detail.quantity)}{" "}
+                  {detail.optionDetails ? "contracts" : "shares"}
+                </dd>
+              </div>
+              <div>
+                <dt>Average cost</dt>
+                <dd>{money(detail.avgCost)}</dd>
+              </div>
+              <div>
+                <dt>Quote source</dt>
+                <dd>
+                  {detail.projection.quoteSource}
+                  {detail.projection.priceEstimated
+                    ? " · cost-basis estimate"
+                    : ""}
+                  {detail.projection.quoteStale ? " · stale" : ""}
+                </dd>
+              </div>
+              <div>
+                <dt>Quoted at</dt>
+                <dd>
+                  {detail.projection.quoteAsOf
+                    ? new Date(detail.projection.quoteAsOf).toLocaleString()
+                    : "Unavailable"}
+                </dd>
+              </div>
+              {detail.optionDetails && (
+                <div>
+                  <dt>Contract</dt>
+                  <dd>
+                    {detail.symbol}
+                    <small>
+                      {detail.optionDetails.expiration.slice(0, 10)} ·{" "}
+                      {detail.optionDetails.multiplier} shares / contract
+                    </small>
+                  </dd>
+                </div>
+              )}
+              <div>
+                <dt>At target</dt>
+                <dd>
+                  {money(detail.projection.projectedValue)}
+                  <small>
+                    {detail.projection.hasTarget
+                      ? `Underlying target ${money(detail.projection.targetUnderlyingPrice)}`
+                      : "No target; retains current value"}
+                  </small>
+                </dd>
+              </div>
+            </dl>
+            {detail.optionDetails &&
+              detail.projection.underlyingPrice != null && (
+                <OptionsExplorer
+                  spot={detail.projection.underlyingPrice}
+                  strike={Number(detail.optionDetails.strike)}
+                  right={detail.optionDetails.right}
+                  expiration={detail.optionDetails.expiration}
+                  premium={detail.avgCost}
+                  quantity={detail.quantity}
+                  iv={detail.projection.impliedVolatility ?? 0.6}
+                  multiplier={detail.optionDetails.multiplier}
+                />
+              )}
+            <div className="modal-actions">
+              <button
+                className="button secondary"
+                onClick={() => {
+                  setJournalSymbol(
+                    detail.optionDetails?.underlying ?? detail.symbol,
+                  );
+                  setDetail(null);
+                  changeView("journal");
+                }}
+              >
+                <BookOpen size={16} />
+                Thesis journal
+              </button>
+              <button
+                className="button secondary"
+                onClick={() => {
+                  sell(detail);
+                  setDetail(null);
+                }}
+              >
+                Sell
+              </button>
+              <button
+                className="button primary"
+                onClick={() => {
+                  setTarget(detail);
+                  setDetail(null);
+                }}
+              >
+                <Target size={16} />
+                Edit target
+              </button>
+            </div>
           </div>
-        )}
-        <footer className="modal-actions">
-          <button
-            type="button"
-            className="button secondary"
-            disabled={busy}
-            onClick={close}
-          >
-            Cancel
-          </button>
-          <button className="button primary" disabled={busy}>
-            {busy
-              ? "Saving..."
-              : portfolio
-                ? "Confirm cash adjustment"
-                : "Create portfolio"}
-            <ArrowRight size={16} />
-          </button>
-        </footer>
-      </form>
-    </DeskModal>
-  );
-}
-function ActivityTable({ portfolios }: { portfolios: Portfolio[] }) {
-  const events = portfolios
-    .flatMap((p) => p.ledger.map((l) => ({ ...l, portfolio: p.name })))
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  const realized = portfolios.reduce(
-    (s, p) =>
-      s +
-      p.orders.reduce(
-        (s, o) => s + o.fills.reduce((s, f) => s + Number(f.realizedPnL), 0),
-        0,
-      ),
-    0,
-  );
-  return (
-    <>
-      <div className="activity-summary">
-        <Activity size={18} />
-        <span>Recent transactions</span>
-        <span>
-          Realized P/L from displayed orders:{" "}
-          <b className={realized >= 0 ? "positive" : "negative"}>
-            {money(realized)}
-          </b>
-        </span>
-      </div>
-      {!events.length ? (
-        <div className="empty-state">
-          <h3>No activity yet.</h3>
-          <p>Your deposits and trades will appear here.</p>
-        </div>
-      ) : (
-        <div className="table-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>Transaction</th>
-                <th>Portfolio</th>
-                <th>Details</th>
-                <th>Date</th>
-                <th>Cash impact</th>
-              </tr>
-            </thead>
-            <tbody>
-              {events.map((e) => (
-                <tr key={e.id}>
-                  <td>
-                    <span className="badge subtle">{e.type}</span>
-                  </td>
-                  <td>{e.portfolio}</td>
-                  <td>{e.note ?? "Cash adjustment"}</td>
-                  <td>{new Date(e.createdAt).toLocaleString()}</td>
-                  <td
-                    className={Number(e.amount) >= 0 ? "positive" : "negative"}
-                  >
-                    {money(Number(e.amount))}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        </DeskModal>
       )}
-    </>
+      {report && (
+        <Report
+          initialMasked={prefs.privacy}
+          portfolios={selected}
+          filtered={filtered}
+          asOf={data?.asOf ?? new Date().toISOString()}
+          mode={data?.mode ?? "demo"}
+          close={() => setReport(false)}
+        />
+      )}
+      {command && (
+        <CommandPalette items={commands} close={() => setCommand(false)} />
+      )}
+    </div>
   );
 }

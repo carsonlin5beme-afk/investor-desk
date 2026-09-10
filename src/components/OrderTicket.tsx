@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useId } from "react";
 import { ArrowRight, CheckCircle2, Search, RefreshCw } from "lucide-react";
 import {
   api,
@@ -9,7 +9,9 @@ import {
   money,
   num,
 } from "@/lib/desk-types";
+import { quoteStatus, type QuoteStatus } from "@/lib/quote-status";
 import { DeskModal } from "./DeskModal";
+import { OptionsExplorer } from "./studio/OptionsExplorer";
 type Quote = {
   bid: number | null;
   ask: number | null;
@@ -26,32 +28,46 @@ type Preview = {
   cashAfter: number;
   quote: Quote;
 };
+function requestErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message) return error.message;
+  if (typeof error === "string" && error.trim()) return error;
+  return "Request failed. Please try again.";
+}
+
 export function OrderTicket({
   portfolio,
   mode,
   holding,
   close,
   saved,
+  connectData,
+  onSetTarget,
 }: {
   portfolio: Portfolio;
   mode: string;
   holding?: Holding;
   close: () => void;
   saved: () => void;
+  connectData: () => void;
+  onSetTarget?: (positionId: string) => void;
 }) {
   const [asset, setAsset] = useState<"EQUITY" | "OPTION">(
       holding?.assetClass ?? "EQUITY",
     ),
     [side, setSide] = useState(holding ? "SELL" : "BUY"),
     [symbol, setSymbol] = useState(
-      holding?.optionDetails?.underlying ?? holding?.symbol ?? "TSLA",
+      holding?.optionDetails?.underlying ?? holding?.symbol ?? "",
     ),
     [query, setQuery] = useState(
-      holding?.optionDetails?.underlying ?? holding?.symbol ?? "TSLA",
+      holding?.optionDetails?.underlying ?? holding?.symbol ?? "",
     ),
     [suggestions, setSuggestions] = useState<
       { symbol: string; name: string }[]
     >([]);
+  const [availability, setAvailability] = useState<QuoteStatus | null>(null);
+  const [optionsAvailability, setOptionsAvailability] =
+    useState<QuoteStatus | null>(null);
+  const [quoteLoading, setQuoteLoading] = useState(true);
   const [quote, setQuote] = useState<Quote | null>(null),
     [quantity, setQuantity] = useState(holding ? String(holding.quantity) : ""),
     [orderType, setOrderType] = useState("MARKET"),
@@ -88,10 +104,19 @@ export function OrderTicket({
       notional: number;
       portfolioCashBalance: number;
       orderId: string;
+      position?: { id: string } | null;
     } | null>(null),
     [clientId, setClientId] = useState(""),
     [previewAt, setPreviewAt] = useState(0),
     [now, setNow] = useState(Date.now());
+  const searchId = useId();
+  const formId = useId();
+  const [suggestionIndex, setSuggestionIndex] = useState(0),
+    [suggestionNavigated, setSuggestionNavigated] = useState(false),
+    [suggestionsQuery, setSuggestionsQuery] = useState(""),
+    [strikeSearch, setStrikeSearch] = useState(""),
+    [chainOpen, setChainOpen] = useState(!holding),
+    [showPayoff, setShowPayoff] = useState(false);
   const payload = {
     portfolioId: portfolio.id,
     assetClass: asset,
@@ -119,7 +144,7 @@ export function OrderTicket({
     return () => clearInterval(t);
   }, []);
   useEffect(() => {
-    if (query === symbol) {
+    if (query === symbol || !query.trim()) {
       setSuggestions([]);
       return;
     }
@@ -131,8 +156,15 @@ export function OrderTicket({
         undefined,
         c.signal,
       )
-        .then((d) => setSuggestions(d.symbols))
-        .catch(() => {});
+        .then((d) => {
+          if (c.signal.aborted) return;
+          setSuggestions(d.symbols);
+          setSuggestionsQuery(query);
+          setSuggestionIndex(0);
+        })
+        .catch((error: unknown) => {
+          if (!c.signal.aborted) setError(requestErrorMessage(error));
+        });
     }, 200);
     return () => {
       clearTimeout(t);
@@ -140,44 +172,91 @@ export function OrderTicket({
     };
   }, [query, symbol]);
   useEffect(() => {
+    if (!symbol) {
+      setQuote(null);
+      setQuoteLoading(false);
+      setAvailability(null);
+      return;
+    }
     const c = new AbortController();
     setQuote(null);
-    const run = () =>
-      api<{ quote: Quote | null }>(
+    setAvailability(null);
+    setQuoteLoading(true);
+    let inFlight = false;
+    const run = () => {
+      if (c.signal.aborted || inFlight) return;
+      inFlight = true;
+      return api<{ quote: Quote | null; availability: QuoteStatus }>(
         `/api/quotes/snapshot?symbol=${encodeURIComponent(symbol)}&assetClass=EQUITY`,
         "GET",
         undefined,
         c.signal,
       )
-        .then((d) => setQuote(d.quote))
-        .catch((e) => {
-          if (e.name !== "AbortError") setError(e.message);
+        .then((d) => {
+          if (!c.signal.aborted) {
+            setQuote(d.quote);
+            setAvailability(d.availability);
+            setQuoteLoading(false);
+          }
+        })
+        .catch((error: unknown) => {
+          if (!c.signal.aborted) {
+            const message = requestErrorMessage(error);
+            setError(message);
+            setQuoteLoading(false);
+            setAvailability({
+              code: "REFRESH_FAILED",
+              label: "Quote refresh failed",
+              message,
+              blocking: true,
+              connectionRequired: true,
+            });
+          }
+        })
+        .finally(() => {
+          inFlight = false;
         });
+    };
     void run();
     const t = setInterval(run, 15000);
     return () => {
-      c.abort();
       clearInterval(t);
+      c.abort();
     };
   }, [symbol]);
   useEffect(() => {
-    if (asset !== "OPTION") return;
+    if (asset !== "OPTION" || !symbol) return;
     const c = new AbortController();
     setExpirations([]);
-    void api<{ expirations: string[] }>(
+    setOptionsAvailability(null);
+    setChain([]);
+    setContract((old) => (old?.underlying === symbol ? old : null));
+    void api<{ expirations: string[]; availability?: QuoteStatus }>(
       `/api/options/expirations?symbol=${encodeURIComponent(symbol)}`,
       "GET",
       undefined,
       c.signal,
     )
       .then((d) => {
+        if (c.signal.aborted) return;
+        setOptionsAvailability(d.availability ?? null);
         setExpirations(d.expirations);
         setExpiration((old) =>
           d.expirations.includes(old) ? old : (d.expirations[0] ?? ""),
         );
       })
-      .catch((e) => {
-        if (e.name !== "AbortError") setError(e.message);
+      .catch((error: unknown) => {
+        if (!c.signal.aborted) {
+          const message = requestErrorMessage(error);
+          setError(message);
+          setOptionsAvailability({
+            code: "REFRESH_FAILED",
+            label: "Options refresh failed",
+            message,
+            blocking: true,
+            connectionRequired: true,
+          });
+        }
       });
     return () => c.abort();
   }, [symbol, asset]);
@@ -186,32 +265,57 @@ export function OrderTicket({
     const c = new AbortController();
     setChain([]);
     setLoading(true);
-    void api<{ contracts: Contract[] }>(
-      `/api/options/chain?symbol=${encodeURIComponent(symbol)}&expiration=${expiration}&right=${right}`,
-      "GET",
-      undefined,
-      c.signal,
-    )
-      .then((d) => {
-        setChain(d.contracts);
-        setContract(
-          (old) =>
-            d.contracts.find((c) => c.contractSymbol === old?.contractSymbol) ??
-            null,
-        );
-      })
-      .catch((e) => {
-        if (e.name !== "AbortError") setError(e.message);
-      })
-      .finally(() => {
-        if (!c.signal.aborted) setLoading(false);
-      });
-    return () => c.abort();
+    let inFlight = false;
+    const run = () => {
+      if (c.signal.aborted || inFlight) return;
+      inFlight = true;
+      return api<{ contracts: Contract[]; availability?: QuoteStatus }>(
+        `/api/options/chain?symbol=${encodeURIComponent(symbol)}&expiration=${expiration}&right=${right}`,
+        "GET",
+        undefined,
+        c.signal,
+      )
+        .then((d) => {
+          if (c.signal.aborted) return;
+          setOptionsAvailability(d.availability ?? null);
+          setChain(d.contracts);
+          setContract(
+            (old) =>
+              d.contracts.find(
+                (c) => c.contractSymbol === old?.contractSymbol,
+              ) ?? null,
+          );
+        })
+        .catch((error: unknown) => {
+          if (!c.signal.aborted) {
+            const message = requestErrorMessage(error);
+            setError(message);
+            setOptionsAvailability({
+              code: "REFRESH_FAILED",
+              label: "Options refresh failed",
+              message,
+              blocking: true,
+              connectionRequired: true,
+            });
+          }
+        })
+        .finally(() => {
+          inFlight = false;
+          if (!c.signal.aborted) setLoading(false);
+        });
+    };
+    void run();
+    const timer = setInterval(run, 15000);
+    return () => {
+      clearInterval(timer);
+      c.abort();
+    };
   }, [asset, symbol, expiration, right]);
   function chooseSymbol(s: string) {
     setSymbol(s);
     setQuery(s);
     setSuggestions([]);
+    setChainOpen(true);
     setContract(null);
     setExpiration("");
     setQuantity("");
@@ -226,8 +330,53 @@ export function OrderTicket({
     )?.quantity ?? 0;
   const estimated =
     Number(quantity) * (price ?? 0) * (asset === "OPTION" ? 100 : 1);
+  const activeStatus =
+    asset === "OPTION"
+      ? (optionsAvailability ??
+        (contract
+          ? quoteStatus({
+              symbol: contract.contractSymbol,
+              source: contract.source ?? (mode === "demo" ? "demo" : "unknown"),
+              asOf: contract.asOf,
+              hasQuote: true,
+              now,
+            })
+          : null))
+      : availability?.blocking
+        ? availability
+        : quote
+          ? quoteStatus({
+              symbol,
+              source: quote.source,
+              asOf: quote.asOf,
+              hasQuote: true,
+              now,
+            })
+          : availability;
+  const validPrice = price != null && Number.isFinite(price) && price > 0;
+  const previewBlocker = !symbol
+    ? "Choose a symbol to begin."
+    : query !== symbol
+      ? "Select a ticker or press Enter to confirm it."
+      : activeStatus?.blocking
+        ? activeStatus.message
+        : asset === "OPTION" && !contract
+          ? "Choose an expiration and select an option contract."
+          : !validPrice
+            ? quoteLoading
+              ? "Loading a quote..."
+              : "A positive bid/ask quote is required before previewing an order."
+            : !Number.isFinite(Number(quantity)) || Number(quantity) <= 0
+              ? "Enter the number of shares or contracts to trade."
+              : asset === "OPTION" && !Number.isInteger(Number(quantity))
+                ? "Options require a whole number of contracts."
+                : "";
   async function review(e: React.FormEvent) {
     e.preventDefault();
+    if (previewBlocker) {
+      setError(previewBlocker);
+      return;
+    }
     setBusy(true);
     setError("");
     setPreview(null);
@@ -276,9 +425,72 @@ export function OrderTicket({
       close={close}
       wide
       busy={busy}
+      footer={
+        !result ? (
+          <footer className="modal-actions ticket-actions">
+            <div className="ticket-sticky-summary">
+              <small>
+                {side === "BUY" ? "Estimated debit" : "Estimated credit"} ·{" "}
+                {portfolio.name}
+              </small>
+              <strong
+                className={
+                  validPrice && !activeStatus?.blocking
+                    ? "numeric-highlight"
+                    : undefined
+                }
+              >
+                {validPrice ? money(estimated) : "Choose an instrument"}
+              </strong>
+            </div>
+            <button
+              className="button secondary"
+              type="button"
+              onClick={close}
+              disabled={busy}
+            >
+              Cancel
+            </button>
+            {preview && !expired ? (
+              <button
+                className="button primary"
+                type="button"
+                onClick={execute}
+                disabled={busy}
+              >
+                {busy ? "Executing..." : "Execute simulated order"}
+                <ArrowRight size={17} />
+              </button>
+            ) : (
+              <button
+                className="button primary"
+                type="submit"
+                form={formId}
+                aria-describedby={
+                  !preview && previewBlocker && !activeStatus?.blocking
+                    ? "preview-help"
+                    : undefined
+                }
+                disabled={busy || Boolean(previewBlocker)}
+              >
+                {busy
+                  ? "Checking..."
+                  : expired && preview
+                    ? "Refresh preview"
+                    : "Preview order"}
+                {busy ? (
+                  <RefreshCw className="spin" size={17} />
+                ) : (
+                  <ArrowRight size={17} />
+                )}
+              </button>
+            )}
+          </footer>
+        ) : undefined
+      }
     >
       {result ? (
-        <div className="modal-body success-state">
+        <div className="modal-body success-state ticket-success">
           <CheckCircle2 size={48} />
           <h3>Your portfolio is updated.</h3>
           <p>
@@ -295,18 +507,42 @@ export function OrderTicket({
           <p className="fine-print">
             Simulation only. No order was sent to a broker.
           </p>
-          <button className="button primary" onClick={close}>
-            Back to portfolio
-            <ArrowRight size={17} />
-          </button>
+          <div className="receipt-actions">
+            {result.position && onSetTarget && (
+              <button
+                className="button primary"
+                type="button"
+                onClick={() => onSetTarget(result.position!.id)}
+              >
+                Set a target
+                <ArrowRight size={17} />
+              </button>
+            )}
+            <button
+              className="button secondary"
+              type="button"
+              onClick={() => {
+                setResult(null);
+                setPreview(null);
+                setQuantity("");
+              }}
+            >
+              Another order
+            </button>
+            <button className="button secondary" onClick={close}>
+              Back to portfolio
+              <ArrowRight size={17} />
+            </button>
+          </div>
         </div>
       ) : (
-        <form className="modal-body" onSubmit={review}>
+        <form id={formId} className="modal-body trade-ticket" onSubmit={review}>
           <fieldset disabled={busy}>
             <div className="ticket-top">
               <div className="segmented">
                 <button
                   type="button"
+                  aria-pressed={asset === "EQUITY"}
                   className={asset === "EQUITY" ? "active" : ""}
                   onClick={() => {
                     setAsset("EQUITY");
@@ -317,6 +553,7 @@ export function OrderTicket({
                 </button>
                 <button
                   type="button"
+                  aria-pressed={asset === "OPTION"}
                   className={asset === "OPTION" ? "active" : ""}
                   onClick={() => setAsset("OPTION")}
                 >
@@ -335,12 +572,54 @@ export function OrderTicket({
                   <div className="input-icon">
                     <Search size={17} />
                     <input
+                      role="combobox"
+                      aria-expanded={suggestions.length > 0}
+                      aria-controls={searchId}
+                      aria-autocomplete="list"
+                      aria-activedescendant={
+                        suggestions[suggestionIndex]
+                          ? `${searchId}-${suggestionIndex}`
+                          : undefined
+                      }
+                      autoComplete="off"
+                      placeholder="Ticker or company name"
                       value={query}
-                      onChange={(e) => setQuery(e.target.value.toUpperCase())}
+                      onChange={(e) => {
+                        setQuery(e.target.value.toUpperCase());
+                        setSuggestionNavigated(false);
+                        setSuggestions([]);
+                      }}
                       onKeyDown={(e) => {
+                        if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                          e.preventDefault();
+                          setSuggestionNavigated(true);
+                          setSuggestionIndex(
+                            (i) =>
+                              (i +
+                                (e.key === "ArrowDown" ? 1 : -1) +
+                                Math.max(suggestions.length, 1)) %
+                              Math.max(suggestions.length, 1),
+                          );
+                        }
+                        if (e.key === "Escape" && suggestions.length) {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setSuggestions([]);
+                        }
                         if (e.key === "Enter" && query !== symbol) {
                           e.preventDefault();
-                          chooseSymbol(query.trim());
+                          chooseSymbol(
+                            suggestionsQuery !== query
+                              ? query.trim()
+                              : suggestionNavigated
+                                ? (suggestions[suggestionIndex]?.symbol ??
+                                  query.trim())
+                                : (suggestions.find(
+                                    (item) => item.symbol === query.trim(),
+                                  )?.symbol ??
+                                  suggestions[0]?.symbol ??
+                                  query.trim()),
+                          );
                         }
                       }}
                       onBlur={() => {
@@ -355,11 +634,20 @@ export function OrderTicket({
                   </div>
                 </label>
                 {suggestions.length > 0 && (
-                  <div className="suggestions">
-                    {suggestions.map((s) => (
+                  <div
+                    className="suggestions"
+                    id={searchId}
+                    role="listbox"
+                    aria-label="Matching instruments"
+                  >
+                    {suggestions.map((s, index) => (
                       <button
                         type="button"
                         key={s.symbol}
+                        id={`${searchId}-${index}`}
+                        role="option"
+                        aria-selected={index === suggestionIndex}
+                        onMouseDown={(e) => e.preventDefault()}
                         onClick={() => chooseSymbol(s.symbol)}
                       >
                         <strong>{s.symbol}</strong>
@@ -381,26 +669,82 @@ export function OrderTicket({
                 </select>
               </label>
             </div>
-            <div className="quote-strip">
-              <strong>{symbol}</strong>
-              <span>
-                Mark <b>{money(quote?.mark)}</b>
-              </span>
-              <span>
-                Bid <b>{money(quote?.bid)}</b>
-              </span>
-              <span>
-                Ask <b>{money(quote?.ask)}</b>
-              </span>
-              <small>
-                {mode === "demo"
-                  ? "ILLUSTRATIVE PRICES"
-                  : quote
-                    ? `${quote.source} · ${new Date(quote.asOf).toLocaleTimeString()}`
-                    : "QUOTE UNAVAILABLE"}
-              </small>
-            </div>
-            {asset === "OPTION" && (
+            {!symbol && (
+              <div className="ticket-intro">
+                <p>
+                  Start with a symbol, then choose the position you want to
+                  build.
+                </p>
+                {mode === "demo" && (
+                  <div className="sample-symbols">
+                    <span>Explore sample instruments</span>
+                    {["PL", "TSLA", "AAPL", "SPY", "BTG"].map((s) => (
+                      <button
+                        type="button"
+                        key={s}
+                        onClick={() => chooseSymbol(s)}
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            {symbol && (
+              <div className="quote-strip">
+                <strong>{symbol}</strong>
+                <span>
+                  Mark <b>{money(quote?.mark)}</b>
+                </span>
+                <span>
+                  Bid <b>{money(quote?.bid)}</b>
+                </span>
+                <span>
+                  Ask <b>{money(quote?.ask)}</b>
+                </span>
+                <small>
+                  {mode === "demo"
+                    ? "ILLUSTRATIVE PRICES"
+                    : quote
+                      ? `${quote.source} · ${new Date(quote.asOf).toLocaleString()}`
+                      : "QUOTE UNAVAILABLE"}
+                </small>
+              </div>
+            )}
+            {activeStatus && (
+              <div
+                className={`quote-notice ${activeStatus.blocking ? "blocking" : "compact-notice"}`}
+                role="status"
+              >
+                <strong>{activeStatus.label}</strong>
+                <p>{activeStatus.message}</p>
+                {activeStatus.code === "DEMO_UNAVAILABLE" && (
+                  <div className="sample-symbols">
+                    <span>Try an illustrative sample</span>
+                    {["PL", "TSLA", "AAPL", "SPY", "BTG"].map((sample) => (
+                      <button
+                        type="button"
+                        key={sample}
+                        onClick={() => chooseSymbol(sample)}
+                      >
+                        {sample}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {activeStatus.connectionRequired && mode !== "demo" && (
+                  <button
+                    type="button"
+                    className="text-button"
+                    onClick={connectData}
+                  >
+                    Review data connection
+                  </button>
+                )}
+              </div>
+            )}
+            {asset === "OPTION" && symbol && (
               <>
                 <div className="ticket-grid">
                   <label>
@@ -410,13 +754,24 @@ export function OrderTicket({
                       onChange={(e) => {
                         setExpiration(e.target.value);
                         setContract(null);
+                        setChainOpen(true);
+                        setStrikeSearch("");
                       }}
                     >
                       <option value="" disabled>
                         Select expiration
                       </option>
                       {expirations.map((e) => (
-                        <option key={e}>{e}</option>
+                        <option key={e} value={e}>
+                          {e} ·{" "}
+                          {Math.max(
+                            0,
+                            Math.ceil(
+                              (new Date(e).getTime() - Date.now()) / 86400000,
+                            ),
+                          )}{" "}
+                          days
+                        </option>
                       ))}
                     </select>
                   </label>
@@ -427,6 +782,8 @@ export function OrderTicket({
                       onChange={(e) => {
                         setRight(e.target.value as "CALL" | "PUT");
                         setContract(null);
+                        setChainOpen(true);
+                        setStrikeSearch("");
                       }}
                     >
                       <option value="CALL">Call</option>
@@ -438,66 +795,133 @@ export function OrderTicket({
                   <strong>Select a contract</strong>
                   <small>Premium per share · 100 shares / contract</small>
                 </div>
-                <div className="chain-table">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Strike</th>
-                        <th>Bid</th>
-                        <th>Ask</th>
-                        <th>IV</th>
-                        <th>Selection</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {chain.map((c) => (
-                        <tr
-                          key={c.contractSymbol}
-                          className={
-                            contract?.contractSymbol === c.contractSymbol
-                              ? "selected-row"
-                              : ""
-                          }
-                        >
-                          <td>{money(c.strike)}</td>
-                          <td>{money(c.bid)}</td>
-                          <td>{money(c.ask)}</td>
-                          <td>
-                            {c.impliedVolatility == null
-                              ? "N/A"
-                              : `${(c.impliedVolatility * 100).toFixed(0)}%`}
-                          </td>
-                          <td>
+                {contract && (
+                  <button
+                    type="button"
+                    className="text-button change-contract"
+                    onClick={() => setChainOpen((v) => !v)}
+                  >
+                    {chainOpen ? "Keep selected contract" : "Change contract"}:{" "}
+                    {contract.underlying} {money(contract.strike)}{" "}
+                    {contract.right.toLowerCase()}
+                  </button>
+                )}
+                {chainOpen && (
+                  <>
+                    <label className="strike-filter">
+                      Find a strike
+                      <input
+                        aria-label="Filter option strikes"
+                        type="search"
+                        value={strikeSearch}
+                        placeholder="Strike price…"
+                        onChange={(e) => setStrikeSearch(e.target.value)}
+                      />
+                    </label>
+                    <div className="chain-table">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Strike</th>
+                            <th>Bid</th>
+                            <th>Ask</th>
+                            <th>IV</th>
+                            <th>Selection</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {chain
+                            .filter(
+                              (c) =>
+                                !strikeSearch ||
+                                String(c.strike).includes(strikeSearch),
+                            )
+                            .map((c) => (
+                              <tr
+                                key={c.contractSymbol}
+                                className={`${contract?.contractSymbol === c.contractSymbol ? "selected-row" : ""} ${quote?.mark && Math.abs(c.strike - quote.mark) === Math.min(...chain.map((v) => Math.abs(v.strike - (quote.mark ?? 0)))) ? "atm-row" : ""}`}
+                              >
+                                <td>
+                                  {money(c.strike)}
+                                  {quote?.mark &&
+                                  Math.abs(c.strike - quote.mark) ===
+                                    Math.min(
+                                      ...chain.map((v) =>
+                                        Math.abs(v.strike - (quote.mark ?? 0)),
+                                      ),
+                                    ) ? (
+                                    <small>At the money</small>
+                                  ) : null}
+                                </td>
+                                <td>{money(c.bid)}</td>
+                                <td>{money(c.ask)}</td>
+                                <td>
+                                  {c.impliedVolatility == null
+                                    ? "N/A"
+                                    : `${(c.impliedVolatility * 100).toFixed(0)}%`}
+                                </td>
+                                <td>
+                                  <button
+                                    type="button"
+                                    className="contract-button"
+                                    aria-label={`Select ${c.right.toLowerCase()} strike ${c.strike}`}
+                                    aria-pressed={
+                                      contract?.contractSymbol ===
+                                      c.contractSymbol
+                                    }
+                                    onClick={() => {
+                                      setContract(c);
+                                      setChainOpen(false);
+                                    }}
+                                  >
+                                    {contract?.contractSymbol ===
+                                    c.contractSymbol
+                                      ? "Selected"
+                                      : "Select"}
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                      {chain.length > 0 &&
+                        strikeSearch &&
+                        !chain.some((c) =>
+                          String(c.strike).includes(strikeSearch),
+                        ) && (
+                          <div className="chain-empty">
+                            <p>No strikes match “{strikeSearch}”.</p>
                             <button
                               type="button"
-                              className="contract-button"
-                              aria-label={`Select ${c.right.toLowerCase()} strike ${c.strike}`}
-                              onClick={() => setContract(c)}
+                              className="text-button"
+                              onClick={() => setStrikeSearch("")}
                             >
-                              {contract?.contractSymbol === c.contractSymbol
-                                ? "Selected"
-                                : "Select"}
+                              Clear strike filter
                             </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  {!chain.length && (
-                    <p className="chain-empty">
-                      {loading
-                        ? "Loading option chain..."
-                        : mode === "demo"
-                          ? "Choose a sample symbol and expiration to view contracts."
-                          : "No contracts returned. Check the selected provider credentials, expiration, and market-data access."}
-                    </p>
-                  )}
-                </div>
+                          </div>
+                        )}
+                      {!chain.length && (
+                        <p className="chain-empty">
+                          {loading
+                            ? "Loading option chain..."
+                            : mode === "demo"
+                              ? "Choose a sample symbol and expiration to view contracts."
+                              : "No contracts returned. Check the selected provider credentials, expiration, and market-data access."}
+                        </p>
+                      )}
+                    </div>
+                  </>
+                )}
                 {contract && (
                   <div className="selected-contract">
                     {contract.underlying} {money(contract.strike)}{" "}
                     {contract.right.toLowerCase()} · {expiration}{" "}
                     <span>{contract.contractSymbol}</span>
+                    <small>
+                      {contract.source === "demo"
+                        ? "Sample option prices"
+                        : `${contract.source ?? "Unknown source"} / ${contract.asOf ? new Date(contract.asOf).toLocaleString() : "Timestamp unavailable"}`}
+                    </small>
                   </div>
                 )}
               </>
@@ -512,7 +936,9 @@ export function OrderTicket({
                   step={asset === "OPTION" ? 1 : 0.000001}
                   value={quantity}
                   onChange={(e) => setQuantity(e.target.value)}
-                  placeholder={asset === "OPTION" ? "600" : "228"}
+                  placeholder={
+                    asset === "OPTION" ? "Enter contracts" : "Enter shares"
+                  }
                 />
               </label>
               <label>
@@ -543,6 +969,7 @@ export function OrderTicket({
                   <button
                     className="text-button"
                     type="button"
+                    disabled={!validPrice || Boolean(activeStatus?.blocking)}
                     onClick={() =>
                       setQuantity(
                         String(
@@ -552,7 +979,7 @@ export function OrderTicket({
                                 0,
                                 Math.floor(
                                   portfolio.cashBalance /
-                                    ((price ?? Infinity) *
+                                    ((validPrice ? price! : Infinity) *
                                       (asset === "OPTION" ? 100 : 1)),
                                 ),
                               ),
@@ -565,9 +992,59 @@ export function OrderTicket({
                 </div>
               )}
             </div>
+            {validPrice && (
+              <div
+                className="quantity-presets"
+                role="group"
+                aria-label="Position size presets"
+              >
+                {[0.25, 0.5, 1].map((fraction) => (
+                  <button
+                    type="button"
+                    key={fraction}
+                    onClick={() =>
+                      setQuantity(
+                        String(
+                          side === "SELL"
+                            ? asset === "OPTION"
+                              ? Math.floor(owned * fraction)
+                              : Number((owned * fraction).toFixed(6))
+                            : Math.max(
+                                0,
+                                Math.floor(
+                                  (portfolio.cashBalance * fraction) /
+                                    (price! * (asset === "OPTION" ? 100 : 1)),
+                                ),
+                              ),
+                        ),
+                      )
+                    }
+                  >
+                    {fraction === 1
+                      ? side === "SELL"
+                        ? "Sell all"
+                        : "Max"
+                      : `${fraction * 100}%`}
+                  </button>
+                ))}
+              </div>
+            )}
+            {orderType === "LIMIT" && (
+              <p className="info-box">
+                Immediate or cancel: a buy needs an ask at or below your limit;
+                a sell needs a bid at or above it. An uncrossed order will not
+                wait in a queue.
+              </p>
+            )}
             <div className="estimate-row">
               <span>Estimated {side === "BUY" ? "debit" : "credit"}</span>
-              <strong>
+              <strong
+                className={
+                  validPrice && !activeStatus?.blocking
+                    ? "numeric-highlight"
+                    : undefined
+                }
+              >
                 {price != null ? money(estimated) : "No executable quote"}
               </strong>
             </div>
@@ -585,19 +1062,44 @@ export function OrderTicket({
                   : "Put upside is limited by an underlying price of $0."}
               </p>
             )}
+            {asset === "OPTION" &&
+              side === "BUY" &&
+              contract &&
+              quote?.mark != null &&
+              price != null && (
+                <details
+                  className="disclosure ticket-payoff"
+                  open={showPayoff}
+                  onToggle={(e) => setShowPayoff(e.currentTarget.open)}
+                >
+                  <summary>Explore payoff & sensitivity</summary>
+                  {showPayoff && (
+                    <OptionsExplorer
+                      key={contract.contractSymbol}
+                      spot={quote.mark}
+                      strike={contract.strike}
+                      right={right}
+                      expiration={expiration}
+                      premium={price}
+                      iv={contract.impliedVolatility ?? 0.6}
+                      quantity={Number(quantity) || 1}
+                    />
+                  )}
+                </details>
+              )}
             <p className="fine-print">
               No brokerage connection. Long positions only. Zero fees. Market
               buys fill at ask; sells at bid. Uncrossed limits are not queued.
               Prices can change between preview and execution.
             </p>
           </fieldset>
-          {error && (
+          {error && !activeStatus?.blocking && (
             <div className="error-box" role="alert">
               {error}
             </div>
           )}
           {preview && (
-            <div className="review-box">
+            <div className="review-box" role="status">
               <div>
                 <CheckCircle2 size={18} />
                 <strong>Review your simulated order</strong>
@@ -606,6 +1108,13 @@ export function OrderTicket({
                 {side} {num(Number(quantity))}{" "}
                 {asset === "OPTION" ? "contracts" : "shares"} of {symbol} at
                 approximately {money(preview.estimatedFillPrice)}.
+                {contract && (
+                  <span>
+                    {" "}
+                    {contract.right} · {money(contract.strike)} strike ·{" "}
+                    {expiration}.
+                  </span>
+                )}
               </p>
               <div className="scenario-preview">
                 <span>Estimated cash after fill</span>
@@ -618,49 +1127,11 @@ export function OrderTicket({
               </small>
             </div>
           )}
-          <footer className="modal-actions">
-            <button
-              className="button secondary"
-              type="button"
-              onClick={close}
-              disabled={busy}
-            >
-              Cancel
-            </button>
-            {preview && !expired ? (
-              <button
-                className="button primary"
-                type="button"
-                onClick={execute}
-                disabled={busy}
-              >
-                {busy ? "Executing..." : "Execute simulated order"}
-                <ArrowRight size={17} />
-              </button>
-            ) : (
-              <button
-                className="button primary"
-                type="submit"
-                disabled={
-                  busy ||
-                  !quantity ||
-                  query !== symbol ||
-                  (asset === "OPTION" && !contract)
-                }
-              >
-                {busy
-                  ? "Checking..."
-                  : expired && preview
-                    ? "Refresh preview"
-                    : "Preview order"}
-                {busy ? (
-                  <RefreshCw className="spin" size={17} />
-                ) : (
-                  <ArrowRight size={17} />
-                )}
-              </button>
-            )}
-          </footer>
+          {!preview && previewBlocker && !activeStatus?.blocking && (
+            <p className="fine-print" id="preview-help">
+              {previewBlocker}
+            </p>
+          )}
         </form>
       )}
     </DeskModal>

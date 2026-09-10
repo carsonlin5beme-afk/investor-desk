@@ -1,0 +1,125 @@
+.chart {
+  margin: 0;
+  padding: 20px 18px 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-soft);
+  color: var(--muted);
+}
+.graph {
+  height: 235px;
+  position: relative;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.3;
+}
+.axis {
+  position: absolute;
+  inset: 0 auto 30px 0;
+  width: 80px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  text-align: right;
+  padding-right: 12px;
+}
+.plot {
+  position: absolute;
+  inset: 6px 0 36px 80px;
+}
+.plot > svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  overflow: visible;
+}
+.labels {
+  position: absolute;
+  inset: auto 0 0 80px;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  margin: 20px 0 10px;
+  font-size: 12px;
+}
+.legend > span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.swatch {
+  display: inline-block;
+  width: 20px;
+  border-top: 2px solid;
+}
+.caption {
+  font-size: 12px;
+  line-height: 1.65;
+  margin: 14px 0 0;
+}
+@media (max-width: 600px) {
+  .chart {
+    padding: 18px 10px 14px;
+  }
+  .graph {
+    height: 205px;
+  }
+  .axis {
+    width: 58px;
+    padding-right: 8px;
+    font-size: 10px;
+  }
+  .plot {
+    left: 58px;
+  }
+  .labels {
+    left: 58px;
+    font-size: 10px;
+    gap: 4px;
+  }
+  .labels span:nth-child(2) {
+    display: none;
+  }
+  .legend {
+    gap: 9px 14px;
+    font-size: 11px;
+  }
+  .caption {
+    font-size: 11px;
+  }
+}
+
+/* Report grids must shrink around the intentionally scrollable holdings table. */
+.modal,
+.sheet {
+  min-width: 0;
+}
+.sheet {
+  overflow-wrap: anywhere;
+}
+.modal :global(.report-tools) > label:first-child {
+  flex: 1 1 220px;
+}
+.modal select {
+  min-width: 0;
+}
+.sheet :global(.table-scroll) {
+  max-width: 100%;
+}
+.sheet :global(.report-kpis) > div {
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.sheet :global(.report-allocation) > div {
+  flex-wrap: wrap;
+}
+.sheet :global(.report-kpis) strong,
+.sheet :global(.report-allocation) strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

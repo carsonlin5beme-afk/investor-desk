@@ -1,29 +1,42 @@
+import { guestResponse, guestStatus } from "@/server/guest/http";
+import { currentProfile } from "@/server/auth/access";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import {
   buildPositionProjection,
   aggregatePortfolioProjection,
 } from "@/server/services/projection-service";
-import { isDemo, optionsConfigured } from "@/server/providers/factory";
+import {
+  isDemo,
+  equitiesConfigured,
+  equityFeedConfigured,
+  optionsConfigured,
+} from "@/server/providers/factory";
 import { env } from "@/lib/env";
 export const dynamic = "force-dynamic";
-export async function GET() {
+export async function GET(request: Request) {
+  const temporary = await guestResponse(request);
+  if (temporary) return temporary;
   try {
-    const rows = await prisma.portfolio.findMany({
-      orderBy: { createdAt: "asc" },
-      include: {
-        positions: {
-          include: { optionDetails: true, targetScenario: true },
+    const user = await currentProfile();
+    const rows = user
+      ? await prisma.portfolio.findMany({
+          where: { userId: user.id },
           orderBy: { createdAt: "asc" },
-        },
-        orders: {
-          take: 80,
-          orderBy: { submittedAt: "desc" },
-          include: { fills: true },
-        },
-        cashLedgerEntries: { take: 80, orderBy: { createdAt: "desc" } },
-      },
-    });
+          include: {
+            positions: {
+              include: { optionDetails: true, targetScenario: true },
+              orderBy: { createdAt: "asc" },
+            },
+            orders: {
+              take: 80,
+              orderBy: { submittedAt: "desc" },
+              include: { fills: true },
+            },
+            cashLedgerEntries: { take: 80, orderBy: { createdAt: "desc" } },
+          },
+        })
+      : [];
     const portfolios = await Promise.all(
       rows.map(async (p) => {
         const positions = await Promise.all(
@@ -60,14 +73,16 @@ export async function GET() {
       }),
     );
     return NextResponse.json({
+      pendingGuest: user ? await guestStatus() : null,
+      user: user ? { id: user.id, name: user.name, email: user.email } : null,
       portfolios,
       mode: isDemo ? "demo" : "live",
       feeds: {
-        equities: Boolean(env.ALPACA_API_KEY && env.ALPACA_API_SECRET),
+        equities: equitiesConfigured(),
         options: optionsConfigured(),
         optionsProvider: env.OPTIONS_PROVIDER,
         fundamentals: Boolean(env.ALPHAVANTAGE_API_KEY),
-        equityFeed: env.ALPACA_FEED,
+        equityFeed: equityFeedConfigured(),
       },
       asOf: new Date().toISOString(),
     });

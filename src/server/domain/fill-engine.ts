@@ -1,4 +1,4 @@
-import { OrderType, Side } from "@prisma/client";
+import { OrderType, Prisma, Side } from "@prisma/client";
 import { FillDecision, MarketQuote, OrderTicket } from "./types";
 export const decideFill = (
   ticket: OrderTicket,
@@ -39,9 +39,16 @@ export const decideFill = (
   }
   return { fillable: true, fillPrice: price };
 };
-export const estimateOrderNotional = (ticket: OrderTicket, price: number) =>
-  Math.round(
-    ticket.quantity * price * (ticket.assetClass === "OPTION" ? 100 : 1) * 100,
-  ) / 100;
+export const estimateOrderNotional = (
+  ticket: Pick<OrderTicket, "quantity" | "assetClass">,
+  price: number,
+) =>
+  // Match six-decimal fill storage and round cash once with decimal, not binary, arithmetic.
+  new Prisma.Decimal(price)
+    .toDecimalPlaces(6)
+    .times(ticket.quantity)
+    .times(ticket.assetClass === "OPTION" ? 100 : 1)
+    .toDecimalPlaces(2)
+    .toNumber();
 export const hasSufficientCashForBuy = (cash: number, notional: number) =>
   cash >= notional;

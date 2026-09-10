@@ -18,10 +18,17 @@
     "local:stop": "node scripts/local-control.mjs stop",
     "local:status": "node scripts/local-control.mjs status",
     "test:api": "node scripts/test-api.mjs",
-    "format:check": "prettier --check src tests scripts"
+    "format:check": "prettier --check src tests scripts",
+    "predev": "node scripts/auth-secret.mjs",
+    "test:stress": "node scripts/test-stress.mjs",
+    "test:guest": "node scripts/test-guest.mjs",
+    "schwab:connect": "node scripts/schwab-auth.mjs connect",
+    "schwab:status": "node scripts/schwab-auth.mjs status",
+    "schwab:disconnect": "node scripts/schwab-auth.mjs disconnect"
   },
   "dependencies": {
     "@prisma/client": "^5.20.0",
+    "better-auth": "^1.7.3",
     "embedded-postgres": "^18.4.0-beta.17",
     "lucide-react": "^1.41.0",
     "next": "^15.5.25",
@@ -33,6 +40,7 @@
     "@types/node": "^22.10.1",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
+    "jsdom": "^29.1.1",
     "prettier": "^3.9.6",
     "prisma": "^5.20.0",
     "typescript": "^5.6.3",

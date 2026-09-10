@@ -1,19 +1,23 @@
 import { AssetClass } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { finitePrice, quoteTime } from "@/server/providers/alpaca-client";
 import { MarketQuote } from "@/server/domain/types";
 import { providers, quoteSourceFor } from "@/server/providers/factory";
+import { acceptsQuoteSource } from "@/server/providers/quote-sources";
 export type LiveQuoteResult = MarketQuote;
+export type QuoteResult = { quote: MarketQuote | null; refreshFailed: boolean };
+
 const scope = globalThis as typeof globalThis & {
-  quoteRequests?: Map<string, Promise<MarketQuote | null>>;
+  quoteResultRequests?: Map<string, Promise<QuoteResult>>;
 };
-const pending = (scope.quoteRequests ??= new Map());
-export const getLiveQuote = async (
+const pending = (scope.quoteResultRequests ??= new Map());
+export const getQuoteResult = async (
   symbol: string,
   assetClass: AssetClass,
   force = false,
-): Promise<MarketQuote | null> => {
+): Promise<QuoteResult> => {
   const expectedSource = quoteSourceFor(assetClass);
-  const key = `${expectedSource}:${assetClass}:${symbol}`;
+  const key = `${expectedSource}:${assetClass}:${symbol}:${force ? "fresh" : "cached"}`;
   if (pending.has(key)) return pending.get(key)!;
   const request = (async () => {
     const row = await prisma.quoteCache.findUnique({
@@ -34,22 +38,30 @@ export const getLiveQuote = async (
         }
       : null;
     if (!force && valid && Date.now() - row.updatedAt.getTime() < 15000)
-      return cached;
+      return { quote: cached, refreshFailed: false };
     try {
       const raw =
         assetClass === "EQUITY"
           ? await providers.equities.getQuote(symbol)
           : await providers.options.getOptionQuote(symbol);
-      if (!raw) return cached;
+      if (!raw) return { quote: force ? null : cached, refreshFailed: true };
+      if (raw.source && !acceptsQuoteSource(expectedSource, raw.source))
+        throw new Error("Unexpected quote feed source");
       const quote: MarketQuote = {
         symbol,
         assetClass,
-        bid: raw.bid,
-        ask: raw.ask,
-        last: raw.last,
-        mark: raw.mark,
+        bid: finitePrice(raw.bid),
+        ask: finitePrice(raw.ask),
+        last: finitePrice(raw.last),
+        mark:
+          raw.bid != null && raw.ask != null && raw.bid > raw.ask
+            ? null
+            : finitePrice(raw.mark),
         source: raw.source ?? expectedSource,
-        asOf: raw.asOf ?? new Date(0),
+        asOf:
+          raw.asOf && Number.isFinite(raw.asOf.getTime())
+            ? quoteTime(raw.asOf.toISOString())
+            : new Date(0),
         impliedVolatility:
           "impliedVolatility" in raw ? raw.impliedVolatility : null,
       };
@@ -58,13 +70,13 @@ export const getLiveQuote = async (
         create: quote,
         update: quote,
       });
-      return quote;
+      return { quote, refreshFailed: false };
     } catch (error) {
       console.error("[provider:quote]", {
         symbol,
         category: error instanceof Error ? error.message : "unavailable",
       });
-      return cached;
+      return { quote: force ? null : cached, refreshFailed: true };
     }
   })();
   pending.set(key, request);
@@ -74,5 +86,22 @@ export const getLiveQuote = async (
     pending.delete(key);
   }
 };
-export const quoteMark = (quote: MarketQuote | null) =>
-  quote?.mark ?? quote?.last ?? quote?.bid ?? quote?.ask ?? null;
+export const quoteMark = (quote: MarketQuote | null) => {
+  if (!quote) return null;
+  const trade = finitePrice(quote.last);
+  if (quote.bid != null && quote.ask != null && quote.bid > quote.ask)
+    return trade;
+  return (
+    finitePrice(quote.mark) ??
+    trade ??
+    finitePrice(quote.bid) ??
+    finitePrice(quote.ask)
+  );
+};
+
+// Trades always require a successful provider refresh; valuations may retain timestamped cache.
+export const getLiveQuote = async (
+  symbol: string,
+  assetClass: AssetClass,
+  force = false,
+) => (await getQuoteResult(symbol, assetClass, force)).quote;

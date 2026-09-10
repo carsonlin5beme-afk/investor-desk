@@ -1,9 +1,12 @@
+import { isQuoteStale } from "@/server/domain/staleness";
+import { env } from "@/lib/env";
 import { OptionRight } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 
 import { jsonError } from "@/server/api/http";
 import { providers } from "@/server/providers/factory";
 
+import { optionsSetupIssue } from "@/server/services/quote-status";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
@@ -25,6 +28,9 @@ export async function GET(request: NextRequest) {
     return jsonError("right must be CALL or PUT", 400);
   }
 
+  const availability = optionsSetupIssue(symbol);
+  if (availability)
+    return NextResponse.json({ symbol, contracts: [], availability });
   try {
     const contracts = await providers.options.getOptionChain(
       symbol,
@@ -43,7 +49,9 @@ export async function GET(request: NextRequest) {
           source: contract.source,
           asOf: contract.asOf?.toISOString() ?? null,
           stale:
-            !contract.asOf || Date.now() - contract.asOf.getTime() > 120000,
+            /delayed|indicative/.test(contract.source ?? "") ||
+            !contract.asOf ||
+            isQuoteStale(contract.asOf, env.QUOTE_STALE_SECONDS),
           contractSymbol: contract.contractSymbol,
           underlying: contract.underlying,
           right: contract.right,
@@ -58,6 +66,11 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error(error);
-    return jsonError("Failed to load option chain", 500);
+    return jsonError(
+      error instanceof Error && error.message.startsWith("Schwab:")
+        ? error.message
+        : "Failed to load option chain",
+      500,
+    );
   }
 }

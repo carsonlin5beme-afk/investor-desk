@@ -1,3 +1,5 @@
+import { guestResponse } from "@/server/guest/http";
+import { portfolioAccess } from "@/server/auth/access";
 import { NextRequest, NextResponse } from "next/server";
 
 import { toNumber } from "@/lib/decimal";
@@ -8,12 +10,16 @@ import { buildPositionProjection } from "@/server/services/projection-service";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
+  const temporary = await guestResponse(request);
+  if (temporary) return temporary;
   try {
     const portfolioId = request.nextUrl.searchParams.get("portfolioId");
     if (!portfolioId) {
       return jsonError("portfolioId query parameter is required");
     }
 
+    const denied = await portfolioAccess(portfolioId);
+    if (denied) return denied;
     const positions = await prisma.position.findMany({
       where: { portfolioId },
       include: {

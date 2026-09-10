@@ -1,3 +1,5 @@
+import { guestResponse } from "@/server/guest/http";
+import { positionAccess } from "@/server/auth/access";
 import { TargetMode } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -12,6 +14,10 @@ interface Params {
 }
 
 export async function PATCH(request: NextRequest, { params }: Params) {
+  const temporary = await guestResponse(request);
+  if (temporary) return temporary;
+  const denied = await positionAccess((await params).id);
+  if (denied) return denied;
   try {
     const parsed = targetScenarioSchema.safeParse(await request.json());
     if (!parsed.success) {
@@ -50,7 +56,11 @@ export async function PATCH(request: NextRequest, { params }: Params) {
       payload.targetMode === TargetMode.MARKET_CAP &&
       !(payload.useManualShares
         ? payload.sharesOutstandingManual
-        : liveSharesOutstanding)
+        : liveSharesOutstanding != null &&
+            Number.isFinite(liveSharesOutstanding) &&
+            liveSharesOutstanding >= 0.000001
+          ? liveSharesOutstanding
+          : null)
     )
       return jsonError(
         "Shares outstanding unavailable. Enable the manual override and enter a positive share count.",
@@ -93,12 +103,18 @@ export async function PATCH(request: NextRequest, { params }: Params) {
 
     return NextResponse.json({ targetScenario: updated });
   } catch (error) {
+    if (error instanceof SyntaxError)
+      return jsonError("Invalid JSON payload", 400);
     console.error(error);
     return jsonError("Failed to update target scenario", 500);
   }
 }
 
-export async function DELETE(_request: Request, { params }: Params) {
+export async function DELETE(request: Request, { params }: Params) {
+  const temporary = await guestResponse(request);
+  if (temporary) return temporary;
+  const denied = await positionAccess((await params).id);
+  if (denied) return denied;
   await prisma.targetScenario.deleteMany({
     where: { positionId: (await params).id },
   });

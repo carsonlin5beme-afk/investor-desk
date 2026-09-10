@@ -23,9 +23,12 @@ export function MarketDataCheck() {
     }
   }
   return (
-    <section aria-label="Market data connection checks">
+    <section
+      className="connection-checks"
+      aria-label="Market data connection checks"
+    >
       <button className="button secondary" disabled={busy} onClick={check}>
-        {busy ? "Checking feed access..." : "Test feed access (read-only)"}
+        {busy ? "Checking feed access..." : "Check connections"}
       </button>
       {error && (
         <p role="alert" className="error-box">
@@ -34,16 +37,22 @@ export function MarketDataCheck() {
       )}
       {result && (
         <div aria-live="polite">
-          {result.equityFeedConfigured !== "sip" && (
+          <p className="fine-print">
+            Checked {new Date(result.checkedAt).toLocaleString()}
+          </p>
+          {result.equityFeedConfigured === "iex" && (
             <p className="info-box">
               Stocks are configured for IEX only. Select ALPACA_FEED=sip for
               consolidated quotes, after verifying entitlement.
             </p>
           )}
           {result.checks.map((c) => (
-            <div className="info-box" key={c.name}>
+            <div className="connection-result" key={c.name}>
               <strong>
-                {c.name}: {c.status.replaceAll("_", " ")}
+                {c.name}
+                <span className="badge subtle">
+                  {c.status.replaceAll("_", " ")}
+                </span>
               </strong>
               <p>{c.detail}</p>
               {c.asOf && (

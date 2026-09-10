@@ -2,8 +2,9 @@ import { AssetClass } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 
 import { jsonError } from "@/server/api/http";
-import { getLiveQuote } from "@/server/services/quote-service";
+import { getQuoteResult } from "@/server/services/quote-service";
 
+import { dataStatus } from "@/server/services/quote-status";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
@@ -31,12 +32,15 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const quote = await getLiveQuote(symbol, assetClassRaw);
+    const result = await getQuoteResult(symbol, assetClassRaw);
+    const { quote } = result;
+    const availability = dataStatus(symbol, assetClassRaw, result);
     if (!quote) {
-      return NextResponse.json({ quote: null });
+      return NextResponse.json({ quote: null, availability });
     }
 
     return NextResponse.json({
+      availability,
       quote: {
         symbol: quote.symbol,
         assetClass: quote.assetClass,

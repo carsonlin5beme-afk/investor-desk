@@ -10,6 +10,13 @@ import {
 // Illustrative fixtures, never presented as real market prices or fundamentals.
 export const sampleSymbols = [
   {
+    symbol: "PL",
+    name: "Planet Labs PBC",
+    exchange: "NYSE",
+    price: 12,
+    shares: 300_000_000,
+  },
+  {
     symbol: "TSLA",
     name: "Tesla, Inc.",
     exchange: "NASDAQ",

@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { env } from "@/lib/env";
+import { quoteSourceFor } from "@/server/providers/factory";
+import { schwabStatus } from "@/server/providers/schwab-client";
 export const dynamic = "force-dynamic";
 export async function GET() {
   let database = "ok";
@@ -14,17 +16,13 @@ export async function GET() {
       status: database === "ok" ? "ok" : "degraded",
       mode: env.MARKET_DATA_MODE,
       feeds: {
-        equities: `alpaca-${env.ALPACA_FEED}`,
-        options:
-          env.OPTIONS_PROVIDER === "alpaca"
-            ? "alpaca-opra"
-            : env.TRADIER_BASE_URL.includes("sandbox")
-              ? "tradier-delayed"
-              : "tradier",
+        equities: quoteSourceFor("EQUITY"),
+        options: quoteSourceFor("OPTION"),
         transport: "snapshots / polling (not tick streaming)",
       },
       checks: { app: "ok", database },
       providers: {
+        schwab: schwabStatus(),
         alpaca:
           env.ALPACA_API_KEY && env.ALPACA_API_SECRET
             ? "configured (connectivity not checked)"

@@ -16,3 +16,7 @@ output
 *.log
 .env.*
 !.env.example
+
+# Local browser verification and OAuth credentials/certificates
+.playwright-cli/
+.local/schwab/

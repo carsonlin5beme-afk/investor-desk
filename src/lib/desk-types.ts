@@ -75,6 +75,14 @@ export type Portfolio = {
   }[];
 };
 export type DeskData = {
+  guest?: { temporary: boolean; expired: boolean; expiresAt: string | null };
+  pendingGuest?: {
+    portfolioCount: number;
+    entryCount: number;
+    expiresAt: string | null;
+    expired: boolean;
+  } | null;
+  user: { id: string; name: string; email: string } | null;
   portfolios: Portfolio[];
   mode: "demo" | "live";
   feeds: {
@@ -86,6 +94,9 @@ export type DeskData = {
   asOf: string;
 };
 export type Contract = {
+  source?: string;
+  asOf?: string | null;
+  stale?: boolean;
   contractSymbol: string;
   underlying: string;
   right: "CALL" | "PUT";

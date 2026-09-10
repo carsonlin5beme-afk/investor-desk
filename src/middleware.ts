@@ -8,7 +8,10 @@ export function middleware(request: NextRequest) {
     );
   if (!["GET", "HEAD", "OPTIONS"].includes(request.method)) {
     const origin = request.headers.get("origin");
-    if (origin && origin !== `http://${host}` && origin !== `https://${host}`)
+    if (
+      !origin ||
+      (origin !== `http://${host}` && origin !== `https://${host}`)
+    )
       return NextResponse.json(
         { error: "Cross-origin changes are not allowed." },
         { status: 403 },
@@ -22,6 +25,8 @@ export function middleware(request: NextRequest) {
         { status: 415 },
       );
   }
-  return NextResponse.next();
+  const response = NextResponse.next();
+  response.headers.set("Cache-Control", "no-store");
+  return response;
 }
 export const config = { matcher: "/api/:path*" };

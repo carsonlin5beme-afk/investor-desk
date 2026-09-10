@@ -1,13 +1,18 @@
+import { guestResponse } from "@/server/guest/http";
+import { isQuoteStale } from "@/server/domain/staleness";
+import { portfolioAccess } from "@/server/auth/access";
 import { prisma } from "@/lib/prisma";
 import { getLiveQuote } from "@/server/services/quote-service";
 import { env } from "@/lib/env";
 export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
+  const temporary = await guestResponse(request);
+  if (temporary) return temporary;
   const portfolioId = new URL(request.url).searchParams.get("portfolioId");
   if (!portfolioId)
     return Response.json({ error: "portfolioId is required" }, { status: 400 });
-  if (!(await prisma.portfolio.findUnique({ where: { id: portfolioId } })))
-    return Response.json({ error: "Portfolio not found" }, { status: 404 });
+  const denied = await portfolioAccess(portfolioId);
+  if (denied) return denied;
   let stop = () => {};
   const stream = new ReadableStream({
     start(controller) {
@@ -32,6 +37,11 @@ export async function GET(request: Request) {
       };
       const tick = async () => {
         try {
+          // Long-lived streams must not outlive a revoked session.
+          if (await portfolioAccess(portfolioId)) {
+            stop();
+            return;
+          }
           const positions = await prisma.position.findMany({
             where: { portfolioId },
           });
@@ -41,9 +51,7 @@ export async function GET(request: Request) {
             if (quote)
               send("quote", {
                 ...quote,
-                stale:
-                  Date.now() - quote.asOf.getTime() >
-                  env.QUOTE_STALE_SECONDS * 1000,
+                stale: isQuoteStale(quote.asOf, env.QUOTE_STALE_SECONDS),
               });
           }
           send("keepalive", { at: new Date().toISOString() });

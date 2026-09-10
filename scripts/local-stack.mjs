@@ -14,6 +14,7 @@ import EmbeddedPostgres from "embedded-postgres";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 process.chdir(root);
 if (!existsSync(".env")) copyFileSync(".env.example", ".env");
+await import("./auth-secret.mjs");
 process.loadEnvFile(".env");
 const url = new URL(
   process.env.DATABASE_URL ??

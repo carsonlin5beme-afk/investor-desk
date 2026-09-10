@@ -1,5 +1,7 @@
 import { loadAlpacaSymbols } from "@/server/providers/alpaca-symbols";
 import { isDemo } from "@/server/providers/factory";
+import { env } from "@/lib/env";
+import { SchwabEquityProvider } from "@/server/providers/schwab";
 import { sampleSymbols } from "@/server/providers/demo";
 import { loadAllExchangeSymbols } from "@/server/providers/sec-symbols";
 import { SymbolInfo } from "@/server/providers/interfaces";
@@ -8,6 +10,7 @@ interface CachedUniverse {
   symbols: SymbolInfo[];
   loadedAt: number;
   mode: "demo" | "live";
+  provider: string;
 }
 
 const CACHE_TTL_MS = 1000 * 60 * 60 * 6;
@@ -34,6 +37,7 @@ const loadUniverse = async (): Promise<SymbolInfo[]> => {
   if (
     cached &&
     cached.mode === (isDemo ? "demo" : "live") &&
+    cached.provider === env.EQUITY_PROVIDER &&
     now - cached.loadedAt < CACHE_TTL_MS
   ) {
     return cached.symbols;
@@ -41,8 +45,15 @@ const loadUniverse = async (): Promise<SymbolInfo[]> => {
 
   const symbols = isDemo
     ? sampleSymbols
-    : await loadAlpacaSymbols().catch(() => loadAllExchangeSymbols());
-  holder.set({ symbols, loadedAt: now, mode: isDemo ? "demo" : "live" });
+    : env.EQUITY_PROVIDER === "schwab"
+      ? await loadAllExchangeSymbols()
+      : await loadAlpacaSymbols().catch(() => loadAllExchangeSymbols());
+  holder.set({
+    symbols,
+    loadedAt: now,
+    mode: isDemo ? "demo" : "live",
+    provider: env.EQUITY_PROVIDER,
+  });
   return symbols;
 };
 
@@ -74,7 +85,20 @@ export const searchSymbols = async (
     return [];
   }
 
-  const universe = await loadUniverse();
+  let universe = await (env.EQUITY_PROVIDER === "schwab" && !isDemo
+    ? loadUniverse().catch(() => [] as SymbolInfo[])
+    : loadUniverse());
+  if (
+    !isDemo &&
+    env.EQUITY_PROVIDER === "schwab" &&
+    /^[A-Z][A-Z0-9.\/-]{0,9}$/.test(queryUpper)
+  ) {
+    const quote = await new SchwabEquityProvider()
+      .getQuote(queryUpper)
+      .catch(() => null);
+    if (quote && !universe.some((item) => item.symbol === queryUpper))
+      universe = [{ symbol: queryUpper }, ...universe];
+  }
 
   return universe
     .map((item) => {

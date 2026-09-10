@@ -1,11 +1,19 @@
 "use client";
-import { useEffect, useRef, ReactNode } from "react";
+import {
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { X } from "lucide-react";
+import { DialogRadioControl } from "@/components/AmbientRadio";
 export function DeskModal({
   title,
   kicker,
   close,
   children,
+  footer,
   wide = false,
   busy = false,
 }: {
@@ -13,40 +21,67 @@ export function DeskModal({
   kicker: string;
   close: () => void;
   children: ReactNode;
+  footer?: ReactNode;
   wide?: boolean;
   busy?: boolean;
 }) {
-  const ref = useRef<HTMLDialogElement>(null);
-  useEffect(() => {
+  const ref = useRef<HTMLDialogElement>(null),
+    timer = useRef<ReturnType<typeof setTimeout> | null>(null),
+    id = useId();
+  const [closing, setClosing] = useState(false);
+  useLayoutEffect(() => {
+    const trigger =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
     const d = ref.current;
     d?.showModal();
-    return () => d?.close();
+    return () => {
+      if (timer.current) clearTimeout(timer.current);
+      d?.close();
+      if (trigger?.isConnected) trigger.focus({ preventScroll: true });
+    };
   }, []);
+  function dismiss() {
+    if (busy || closing) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      close();
+      return;
+    }
+    setClosing(true);
+    timer.current = setTimeout(close, 160);
+  }
   return (
     <dialog
       ref={ref}
-      className={`modal ${wide ? "modal-wide" : ""}`}
-      aria-labelledby="modal-title"
+      className={`modal ${wide ? "modal-wide" : ""} ${closing ? "is-closing" : ""}`}
+      aria-labelledby={id}
+      aria-busy={busy}
       onCancel={(e) => {
         e.preventDefault();
-        if (!busy) close();
+        dismiss();
       }}
     >
       <header className="modal-head">
         <div>
           <span className="eyebrow">{kicker}</span>
-          <h2 id="modal-title">{title}</h2>
+          <h2 id={id}>{title}</h2>
         </div>
-        <button
-          className="icon-button"
-          aria-label="Close dialog"
-          onClick={close}
-          disabled={busy}
-        >
-          <X size={20} />
-        </button>
+        <div className="modal-head-actions">
+          <DialogRadioControl />
+          <button
+            type="button"
+            className="icon-button"
+            aria-label="Close dialog"
+            onClick={dismiss}
+            disabled={busy}
+          >
+            <X size={20} />
+          </button>
+        </div>
       </header>
-      {children}
+      <div className="modal-content">{children}</div>
+      {footer && <div className="modal-footer">{footer}</div>}
     </dialog>
   );
 }
