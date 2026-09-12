@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ArrowDownRight,
   ArrowUpRight,
@@ -21,6 +21,8 @@ export function ScenarioPreview() {
   const [kind, setKind] = useState<"equity" | "option">("equity");
   const [stockTarget, setStockTarget] = useState(2000);
   const [capTarget, setCapTarget] = useState(50);
+  const [inputMounted, setInputMounted] = useState(false);
+  useEffect(() => setInputMounted(true), []);
   const isEquity = kind === "equity";
   const target = isEquity ? stockTarget : capTarget;
   const scenario = landingScenario(kind, target);
@@ -132,25 +134,33 @@ export function ScenarioPreview() {
               <span>
                 Exact {isEquity ? "price · USD" : "valuation · billions USD"}
               </span>
-              <input
-                aria-label={
-                  isEquity
-                    ? "Exact sample share-price target"
-                    : "Exact sample market-cap target in billions"
-                }
-                type="number"
-                min={0}
-                max={isEquity ? 2500 : 75}
-                step="any"
-                value={target}
-                onChange={(e) => {
-                  const v = Math.min(
-                    isEquity ? 2500 : 75,
-                    Math.max(0, Number(e.target.value)),
-                  );
-                  isEquity ? setStockTarget(v) : setCapTarget(v);
-                }}
-              />
+              {inputMounted ? (
+                <input
+                  aria-label={
+                    isEquity
+                      ? "Exact sample share-price target"
+                      : "Exact sample market-cap target in billions"
+                  }
+                  type="number"
+                  min={0}
+                  max={isEquity ? 2500 : 75}
+                  step="any"
+                  value={target}
+                  onChange={(e) => {
+                    const v = Math.min(
+                      isEquity ? 2500 : 75,
+                      Math.max(0, Number(e.target.value)),
+                    );
+                    isEquity ? setStockTarget(v) : setCapTarget(v);
+                  }}
+                />
+              ) : (
+                // Match the slider's mount boundary: form annotations must not
+                // change an SSR input before React hydrates the example.
+                <span data-number-placeholder="" aria-hidden="true">
+                  {target}
+                </span>
+              )}
             </label>
             <button
               type="button"

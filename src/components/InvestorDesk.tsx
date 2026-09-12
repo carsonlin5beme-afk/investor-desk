@@ -4,6 +4,7 @@ import {
   DialogRadioControl,
 } from "@/components/AmbientRadio";
 import Link from "next/link";
+import { BrandMonogram, BrandWordmark } from "@/components/Brand";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -332,11 +333,15 @@ export function InvestorDesk({ portfolioId }: { portfolioId?: string }) {
       </a>
       <aside className="sidebar" inert={isMobile && !mobileNav}>
         <Link href="/" className="brand">
-          <span className="brand-mark">
-            <BarChart3 size={22} />
+          <span
+            className="brand-mark"
+            aria-hidden="true"
+            style={{ flexShrink: 0 }}
+          >
+            <BrandMonogram decorative />
           </span>
-          <span>
-            investor<span className="brand-light">desk</span>
+          <span style={{ minWidth: 0, flex: 1 }}>
+            <BrandWordmark />
             <small>THE BIGGER PICTURE</small>
           </span>
         </Link>
@@ -1180,7 +1185,8 @@ export function InvestorDesk({ portfolioId }: { portfolioId?: string }) {
           )}
           <footer className="desk-footer">
             <span>
-              INVESTOR DESK <i>/</i> A little perspective.
+              <BrandWordmark style={{ width: 154 }} /> <i>/</i> A little
+              perspective.
             </span>
             <div>
               <Link href="/methodology">Methodology</Link>

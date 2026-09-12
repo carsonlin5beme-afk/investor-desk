@@ -2,6 +2,7 @@
 import { useId, useMemo, useRef, useState } from "react";
 import { Download, Printer, FileJson } from "lucide-react";
 import { DeskModal } from "@/components/DeskModal";
+import { BrandWordmark } from "@/components/Brand";
 import { type Portfolio, type Holding, money, num } from "@/lib/desk-types";
 import {
   csvCell,
@@ -16,6 +17,8 @@ import styles from "./report.module.css";
 const printStyles = `
   :root{color-scheme:light}*{box-sizing:border-box}body{font:14px/1.6 Arial,sans-serif;color:#183d30;margin:40px;background:#fff;overflow-wrap:anywhere}
   h1,h2{font-family:Georgia,serif;font-weight:400;line-height:1.15}h1{font-size:46px;margin:16px 0}h2{font-size:24px;margin:0 0 16px}
+  [data-brand-wordmark]{position:relative;display:inline-grid;grid-template-columns:4924fr 2433fr;column-gap:3.3%;align-items:center;max-width:100%;vertical-align:middle;color:inherit;line-height:1}
+  [data-brand-wordmark]>svg{display:block;width:100%;height:auto;overflow:visible}
   .eyebrow{font-size:11px;letter-spacing:.16em}.report-meta,.fine-print,small{font-size:11px;color:#50665b}
   .report-kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:24px;margin:30px 0;padding:22px 0;border-block:1px solid #dce4db}
   .report-kpis>div{min-width:0}.report-kpis strong{display:block;overflow-wrap:anywhere;font-size:25px;font-weight:500;letter-spacing:-.04em}.report-kpis span{font-size:12px}
@@ -317,7 +320,9 @@ export function Report({
           </label>
         </div>
         <div className={`report-sheet ${styles.sheet}`} ref={ref}>
-          <span className="eyebrow">INVESTOR DESK / INVESTMENT BRIEF</span>
+          <span className="eyebrow">
+            <BrandWordmark style={{ width: 180 }} /> / INVESTMENT BRIEF
+          </span>
           <h1>The bigger picture.</h1>
           <p>{portfolios.map((p) => p.name).join(" · ") || "Your workspace"}</p>
           <p className="report-meta">

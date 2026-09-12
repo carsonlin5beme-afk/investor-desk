@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { AmbientRadioControls } from "@/components/AmbientRadio";
+import { BrandWordmark } from "@/components/Brand";
 import {
   ArrowDown,
   ArrowUpRight,
@@ -11,7 +12,6 @@ import {
   SlidersHorizontal,
   Wallet,
 } from "lucide-react";
-import { LandingNavigation } from "./LandingNavigation";
 import { ScenarioPreview } from "./ScenarioPreview";
 import styles from "./landing.module.css";
 import hero from "./orbit-hero.module.css";
@@ -44,19 +44,9 @@ export function LandingPage() {
       <a href="#main" className={styles.skipLink}>
         Skip to content
       </a>
-      <header className={styles.header}>
-        <Link href="/" className={styles.logo} aria-label="Investor Desk home">
-          <span className={styles.logoIcon}>
-            <BarChart3 size={21} strokeWidth={1.6} aria-hidden="true" />
-          </span>
-          <span>
-            investor<span>desk</span>
-            <small>THE BIGGER PICTURE</small>
-          </span>
-        </Link>
-        <LandingNavigation />
-        <Link href="/dashboard" className={styles.headerCta}>
-          Open workspace <ArrowUpRight size={16} aria-hidden="true" />
+      <header className={`${styles.header} ${styles.titleHeader}`}>
+        <Link href="/sign-in" className={styles.headerCta}>
+          Sign in <ArrowUpRight size={16} aria-hidden="true" />
         </Link>
         <AmbientRadioControls />
       </header>
@@ -67,26 +57,21 @@ export function LandingPage() {
           aria-labelledby="hero-heading"
         >
           <div className={hero.copy}>
-            <p className={hero.eyebrow}>YOUR CONVICTION. A CLEARER PICTURE.</p>
             <h1 id="hero-heading" className={hero.title}>
-              <span>Investor</span> Desk
+              <BrandWordmark
+                layout="stacked"
+                tone="split"
+                className={hero.titleBrand}
+              />
             </h1>
-            <p className={hero.description}>
-              Build a portfolio. Explore what it could become.
-            </p>
             <div className={hero.actions}>
               <Link href="/dashboard" className={hero.primary}>
-                Open your workspace{" "}
-                <ArrowUpRight size={17} aria-hidden="true" />
+                Workspace <ArrowUpRight size={17} aria-hidden="true" />
               </Link>
               <a href="#explore-example" className={hero.secondary}>
                 Explore the example <ArrowDown size={15} aria-hidden="true" />
               </a>
             </div>
-            <p className={hero.assurance}>
-              Simulated portfolios. Your assumptions, made visible. No
-              real-money trades.
-            </p>
           </div>
           <OrbitArtwork />
         </section>
@@ -95,8 +80,7 @@ export function LandingPage() {
           className={styles.exploreExample}
           aria-labelledby="example-heading"
         >
-          <div>
-            <p className={styles.eyebrow}>YOUR THESIS, IN NUMBERS</p>
+          <div className={styles.exampleIntro}>
             <h2 id="example-heading">
               A little perspective.
               <br />
@@ -106,9 +90,6 @@ export function LandingPage() {
               Move a target. See how one idea changes the whole portfolio.
               Explore stocks and options with this interactive example.
             </p>
-            <p className={styles.exampleNote}>
-              Illustrative prices. Your saved portfolios stay in your workspace.
-            </p>
           </div>
           <ScenarioPreview />
         </section>
@@ -116,20 +97,13 @@ export function LandingPage() {
           className={styles.assetStrip}
           aria-label="Supported portfolio assets"
         >
-          <p>
-            One desk.
-            <br />
-            <strong>More ways to think ahead.</strong>
-          </p>
+          <p>One desk. Infinite simulations.</p>
           <div>
             <span>Stocks</span>
             <span>ETFs</span>
             <span>Long options</span>
             <span>Virtual cash</span>
           </div>
-          <span className={styles.stripCaption}>
-            A SIMULATION. NOT A PROMISE.
-          </span>
         </section>
         <section
           id="how-it-works"
@@ -143,11 +117,6 @@ export function LandingPage() {
                 What if, <em>made tangible.</em>
               </h2>
             </div>
-            <p>
-              You bring the thesis.
-              <br />
-              Investor Desk connects the numbers.
-            </p>
           </div>
           <div className={styles.steps}>
             <article>
@@ -356,7 +325,7 @@ export function LandingPage() {
       <footer className={styles.footer}>
         <div>
           <Link href="/" className={styles.footerBrand}>
-            investor<span>desk</span>
+            <BrandWordmark layout="inline" />
           </Link>
           <p>Perspective for the portfolio you imagine.</p>
         </div>
@@ -370,7 +339,10 @@ export function LandingPage() {
           </Link>
         </nav>
         <div className={styles.footerLegal}>
-          <span>Investor Desk / Local-first portfolio simulation</span>
+          <span className={styles.brandSignature}>
+            <BrandWordmark layout="inline" />
+            <span>/ Local-first portfolio simulation</span>
+          </span>
           <p>
             All examples are hypothetical. Simulated results are not actual
             investment performance. Market-data access depends on provider

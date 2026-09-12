@@ -133,6 +133,37 @@
   fill: none;
   overflow: visible;
 }
+.orbitPlane {
+  transform-box: view-box;
+  transform-origin: 32px 32px;
+  animation-play-state: paused;
+}
+.orbitPlaneOuter {
+  transform: rotate(-35deg);
+  animation: orbit-precess-outer 36s ease-in-out infinite paused;
+}
+.orbitPlaneInner {
+  transform: rotate(35deg) scaleY(0.9);
+  animation: orbit-precess-inner 48s ease-in-out infinite paused;
+}
+@keyframes orbit-precess-outer {
+  0%,
+  100% {
+    transform: rotate(-35deg) scaleY(1);
+  }
+  50% {
+    transform: rotate(40deg) scaleY(0.72);
+  }
+}
+@keyframes orbit-precess-inner {
+  0%,
+  100% {
+    transform: rotate(35deg) scaleY(0.9);
+  }
+  50% {
+    transform: rotate(-50deg) scaleY(1);
+  }
+}
 .orbitTrack {
   stroke: color-mix(in srgb, var(--green) 38%, transparent);
   stroke-width: 1;
@@ -180,6 +211,7 @@
 .orbit[data-playing="true"] .orbitBody {
   animation: none;
 }
+.orbit[data-playing="true"][data-motion-visible="true"] .orbitPlane,
 .orbit[data-playing="true"][data-motion-visible="true"] .orbitFlow,
 .orbit[data-playing="false"][data-motion-visible="true"] .orbitBody {
   animation-play-state: running;
@@ -250,6 +282,7 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .orbitBody,
+  .orbitPlane,
   .orbitFlow {
     animation: none !important;
     transform: none !important;

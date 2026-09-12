@@ -1,0 +1,43 @@
+.wordmark {
+  position: relative;
+  display: inline-grid;
+  width: 14rem;
+  max-width: 100%;
+  vertical-align: middle;
+  line-height: 1;
+  text-align: left;
+}
+.wordmark > svg,
+.monogram > svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+.inline {
+  grid-template-columns: 4924fr 2433fr;
+  align-items: center;
+  column-gap: 3.3%;
+}
+.stacked {
+  width: 100%;
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: clamp(12px, 2vw, 22px);
+}
+.stacked > [data-brand-word="desk"] {
+  width: 49.4119%;
+}
+.split > [data-brand-word="investor"] {
+  color: var(--brand-investor, #a7cbb8);
+}
+.split > [data-brand-word="desk"] {
+  color: var(--brand-desk, #d4dce2);
+}
+.monogram {
+  position: relative;
+  display: inline-block;
+  width: 26px;
+  max-width: 100%;
+  vertical-align: middle;
+  line-height: 1;
+}

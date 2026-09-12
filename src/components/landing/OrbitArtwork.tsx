@@ -65,7 +65,6 @@ export function OrbitArtwork() {
         className={styles.scene}
         data-orbit-stage
         data-state="static"
-        aria-hidden="true"
       >
         <Image
           src="/landing/investor-orbit-v1.png"
@@ -75,17 +74,16 @@ export function OrbitArtwork() {
           sizes="(max-width: 2000px) 100vw, 2000px"
           className={styles.fallback}
         />
-        <div ref={host} className={styles.canvasHost} />
+        <div ref={host} className={styles.canvasHost} aria-hidden="true" />
+        <button
+          type="button"
+          className={styles.motionHitArea}
+          disabled={motion.disabled}
+          aria-label={motion.label}
+          aria-pressed={motion.paused}
+          onClick={() => controller.current?.toggle()}
+        />
       </div>
-      <button
-        type="button"
-        className={styles.motion}
-        disabled={motion.disabled}
-        aria-pressed={motion.paused}
-        onClick={() => controller.current?.toggle()}
-      >
-        {motion.label}
-      </button>
     </>
   );
 }

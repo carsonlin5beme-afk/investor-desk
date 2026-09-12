@@ -125,20 +125,13 @@ function RadioOrbit() {
     >
       <span className={styles.orbitBody}>
         <svg className={styles.orbitDisc} viewBox="0 0 64 64" focusable="false">
-          <g transform="rotate(-35 32 32)">
+          <g className={`${styles.orbitPlane} ${styles.orbitPlaneOuter}`}>
             <ellipse
               className={styles.orbitTrack}
               cx="32"
               cy="32"
               rx="29"
               ry="17"
-            />
-            <ellipse
-              className={styles.orbitTrack}
-              cx="32"
-              cy="32"
-              rx="21"
-              ry="12.3"
             />
             <ellipse
               className={`${styles.orbitFlow} ${styles.orbitOuter}`}
@@ -147,6 +140,15 @@ function RadioOrbit() {
               rx="29"
               ry="17"
               pathLength="100"
+            />
+          </g>
+          <g className={`${styles.orbitPlane} ${styles.orbitPlaneInner}`}>
+            <ellipse
+              className={styles.orbitTrack}
+              cx="32"
+              cy="32"
+              rx="21"
+              ry="12.3"
             />
             <ellipse
               className={`${styles.orbitFlow} ${styles.orbitInner}`}

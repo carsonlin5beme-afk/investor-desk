@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { BrandWordmark } from "@/components/Brand";
 import { AmbientRadioControls } from "@/components/AmbientRadio";
 import { ArrowUpRight } from "lucide-react";
 export function DocumentPage({
@@ -14,7 +15,7 @@ export function DocumentPage({
     <main className="document-page">
       <header>
         <Link href="/">
-          investor<strong>desk</strong>
+          <BrandWordmark style={{ width: 200 }} />
         </Link>
         <Link className="text-button" href="/dashboard">
           Open workspace

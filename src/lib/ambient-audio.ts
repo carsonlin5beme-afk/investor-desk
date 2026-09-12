@@ -210,7 +210,8 @@ export class AmbientAudio {
   constructor(
     private readonly notify: (state: AmbientState) => void,
     private readonly dependencies: EngineDependencies = {
-      context: () => new AudioContext(),
+      // Background listening favors a stable playback buffer over instrument latency.
+      context: () => new AudioContext({ latencyHint: "playback" }),
       graph: createAmbientGraph,
     },
   ) {}
