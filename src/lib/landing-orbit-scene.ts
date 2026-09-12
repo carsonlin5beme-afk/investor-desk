@@ -204,23 +204,39 @@ export async function createScene(
       }
     });
     const shader = THREE.UniformsUtils.clone(reflectorShader.uniforms);
-    const fragment = `uniform vec3 color; uniform sampler2D tDiffuse; varying vec4 vUv; varying vec3 floorPosition;
-    void main(){vec2 uv=vUv.xy/vUv.w; vec3 reflection=texture2D(tDiffuse,uv).rgb*.28;
-    reflection+=texture2D(tDiffuse,uv+vec2(.003,.006)).rgb*.18;
-    reflection+=texture2D(tDiffuse,uv+vec2(-.003,-.006)).rgb*.18;
-    reflection+=texture2D(tDiffuse,uv+vec2(.005,-.003)).rgb*.18;
-    reflection+=texture2D(tDiffuse,uv+vec2(-.005,.003)).rgb*.18;
-    float grain=fract(sin(dot(floorPosition.xy,vec2(12.9898,78.233)))*43758.5453);
-    float pool=exp(-length((floorPosition.xy-vec2(.5,0.))*vec2(.65,.8)));
-    vec3 base=vec3(.0035,.005,.0046)+(grain-.5)*.0006+pool*vec3(.020,.034,.026);
-    gl_FragColor=vec4(base+reflection*.28,1.);
-    #include <tonemapping_fragment>
-    #include <colorspace_fragment>
+    shader.reflectionTexel = { value: new THREE.Vector2(1 / 512, 1 / 512) };
+    const fragment = `
+    uniform sampler2D tDiffuse;
+    uniform vec2 reflectionTexel;
+    varying vec4 vUv;
+    varying vec3 floorPosition;
+    void main() {
+      vec2 uv = vUv.xy / vUv.w;
+      // A contiguous 5x5 binomial blur in nine bilinear texture samples.
+      // All offsets are measured in source texels, avoiding displaced copies.
+      vec2 step = reflectionTexel * 1.2;
+      vec3 reflection = texture2D(tDiffuse, uv).rgb * .140625;
+      reflection += texture2D(tDiffuse, uv + vec2(step.x, 0.)).rgb * .1171875;
+      reflection += texture2D(tDiffuse, uv - vec2(step.x, 0.)).rgb * .1171875;
+      reflection += texture2D(tDiffuse, uv + vec2(0., step.y)).rgb * .1171875;
+      reflection += texture2D(tDiffuse, uv - vec2(0., step.y)).rgb * .1171875;
+      reflection += texture2D(tDiffuse, uv + step).rgb * .09765625;
+      reflection += texture2D(tDiffuse, uv - step).rgb * .09765625;
+      reflection += texture2D(tDiffuse, uv + vec2(step.x, -step.y)).rgb * .09765625;
+      reflection += texture2D(tDiffuse, uv + vec2(-step.x, step.y)).rgb * .09765625;
+      float grain = fract(sin(dot(floorPosition.xy, vec2(12.9898,78.233))) * 43758.5453);
+      vec2 groundOffset = floorPosition.xy - vec2(.49, 0.);
+      float pool = exp(-length(groundOffset * vec2(.65, .8)));
+      float reflectionFade = 1. - smoothstep(1.0, 4.0, length(groundOffset));
+      vec3 base = vec3(.0035,.005,.0046) + (grain-.5)*.0006 + pool*vec3(.020,.034,.026);
+      gl_FragColor = vec4(base + reflection * .24 * reflectionFade, 1.);
+      #include <tonemapping_fragment>
+      #include <colorspace_fragment>
     }`;
     floor = new Reflector(new THREE.PlaneGeometry(40, 40), {
       textureWidth: 512,
-      textureHeight: 256,
-      multisample: 0,
+      textureHeight: 512,
+      multisample: Math.min(2, renderer.capabilities.maxSamples),
       shader: {
         name: "SoftStageReflection",
         uniforms: shader,
@@ -295,6 +311,18 @@ export async function createScene(
       camera.updateProjectionMatrix();
       renderer.setPixelRatio(mobile ? 1 : Math.min(devicePixelRatio, 1.5));
       renderer.setSize(width, height, false);
+      // Match the view aspect and retain enough samples for narrow metal edges.
+      // Keep the longest side bounded even on high-DPI desktop displays.
+      const scale = Math.min(1, 1024 / Math.max(width, height));
+      const reflectionWidth = Math.max(1, Math.round(width * scale));
+      const reflectionHeight = Math.max(1, Math.round(height * scale));
+      floor!.getRenderTarget().setSize(reflectionWidth, reflectionHeight);
+      (
+        floor!.material as THREE.ShaderMaterial
+      ).uniforms.reflectionTexel.value.set(
+        1 / reflectionWidth,
+        1 / reflectionHeight,
+      );
     };
     const render = () => {
       if (disposed) return;
@@ -325,7 +353,10 @@ export async function createScene(
         frameCount,
         estimatedMainMeshDraws: mainCalls,
         allPassCalls: allCalls,
-        reflectionTarget: [512, 256],
+        reflectionTarget: [
+          floor!.getRenderTarget().width,
+          floor!.getRenderTarget().height,
+        ],
         transmissionResolutionScale: renderer.transmissionResolutionScale,
         angleDegrees: (angle * 180) / Math.PI,
         rigQuaternion: rig.quaternion.toArray(),
