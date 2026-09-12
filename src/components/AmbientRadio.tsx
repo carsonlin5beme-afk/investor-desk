@@ -10,7 +10,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { ChevronDown, Orbit, Pause, Play, Volume2, X } from "lucide-react";
+import { ChevronDown, Orbit, Volume2, X } from "lucide-react";
 import {
   AmbientAudio,
   initialAmbientVolume,
@@ -32,6 +32,7 @@ const stateLabel: Record<AmbientState, string> = {
 const RadioContext = createContext<{
   state: AmbientState;
   volume: number;
+  motionVisible: boolean;
   toggle: () => void;
   changeVolume: (value: number) => void;
 } | null>(null);
@@ -39,6 +40,7 @@ const RadioContext = createContext<{
 export function AmbientRadio({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AmbientState>("idle");
   const [volume, setVolume] = useState(initialAmbientVolume);
+  const [motionVisible, setMotionVisible] = useState(false);
   const engine = useRef<AmbientAudio | null>(null);
   const volumeRef = useRef(initialAmbientVolume);
   const stateRef = useRef<AmbientState>("idle");
@@ -69,6 +71,13 @@ export function AmbientRadio({ children }: { children: ReactNode }) {
     }
   }, []);
   useEffect(() => {
+    const visibility = () =>
+      setMotionVisible(document.visibilityState === "visible");
+    visibility();
+    document.addEventListener("visibilitychange", visibility);
+    return () => document.removeEventListener("visibilitychange", visibility);
+  }, []);
+  useEffect(() => {
     try {
       const stored = localStorage.getItem("investor-desk:ambient-volume:v1");
       const value = stored === null ? NaN : Number(stored);
@@ -92,9 +101,33 @@ export function AmbientRadio({ children }: { children: ReactNode }) {
     };
   }, [updateState]);
   return (
-    <RadioContext.Provider value={{ state, volume, toggle, changeVolume }}>
+    <RadioContext.Provider
+      value={{ state, volume, motionVisible, toggle, changeVolume }}
+    >
       {children}
     </RadioContext.Provider>
+  );
+}
+
+/** Decorative playback identity; the provider remains the only audio owner. */
+function RadioOrbit() {
+  const radio = useContext(RadioContext);
+  return (
+    <span
+      className={styles.orbit}
+      aria-hidden="true"
+      data-radio-orbit
+      data-playing={radio?.state === "playing"}
+      data-motion-visible={radio?.motionVisible ?? false}
+    >
+      <span className={styles.orbitBody}>
+        <span className={styles.orbitRings}>
+          <span className={styles.orbitRing} />
+          <span className={styles.orbitRingTilted} />
+        </span>
+        <span className={styles.orbitDot} />
+      </span>
+    </span>
   );
 }
 
@@ -110,7 +143,7 @@ export function DialogRadioControl() {
       aria-label={playing ? "Pause space radio" : "Resume space radio"}
       title={playing ? "Pause space radio" : "Resume space radio"}
     >
-      {playing ? <Pause size={16} /> : <Play size={16} />}
+      <RadioOrbit />
     </button>
   );
 }
@@ -162,11 +195,7 @@ export function AmbientRadioControls() {
           onClick={toggle}
           aria-label={playing ? "Pause space radio" : "Play space radio"}
         >
-          {playing ? (
-            <Pause size={16} fill="currentColor" />
-          ) : (
-            <Play size={16} fill="currentColor" />
-          )}
+          <RadioOrbit />
         </button>
         <button
           type="button"
@@ -211,9 +240,7 @@ export function AmbientRadioControls() {
             </button>
           </header>
           <div className={styles.station}>
-            <div className={styles.orbit} aria-hidden="true">
-              <i />
-            </div>
+            <RadioOrbit />
             <div>
               <h2>Drift</h2>
               <p>Soft tones. Distant atmosphere.</p>
