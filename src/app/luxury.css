@@ -21,7 +21,12 @@
   --positive-bg: #e6f0e5;
   --negative-bg: #f9e9e4;
   --shadow: 0 10px 32px #213f3010;
-  --font: var(--font-ui), "Avenir Next", sans-serif;
+  --font-ui: var(--font-rome), var(--font-fallback), sans-serif;
+  --font-editorial: var(--font-ui);
+  --font-button:
+    var(--font-button-t), var(--font-button-regular), var(--font-fallback),
+    sans-serif;
+  --font: var(--font-ui);
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
   --radius: 14px;
   color-scheme: light;
@@ -60,6 +65,8 @@ html {
 }
 body {
   font: 15px/1.5 var(--font);
+  /* ARENQ's fine double lines need an optical stroke at interface sizes. */
+  -webkit-text-stroke: 0.3px currentColor;
   background: var(--paper);
   color: var(--ink);
 }
@@ -423,8 +430,9 @@ summary {
   letter-spacing: 1.65px;
 }
 .brand-mark {
-  border-color: #6b8c74;
-  border-radius: 10px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
 }
 .sidebar-search {
   display: flex;
@@ -4841,4 +4849,12 @@ td {
 :root[data-theme="dark"] .privacy-mode .private-value,
 :root[data-theme="dark"] .privacy-mode .private-value * {
   text-shadow: none !important;
+}
+
+/* WHARF action labels use the original Sans T/t and a little more tracking. */
+:is(button, [role="button"], a.button, a.text-button) {
+  font-family: var(--font-button, var(--font-ui)), var(--font-ui), sans-serif;
+  font-synthesis: none;
+  letter-spacing: 0.02em;
+  -webkit-text-stroke: 0;
 }

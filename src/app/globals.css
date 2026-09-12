@@ -62,7 +62,7 @@ p {
 h1,
 h2,
 h3 {
-  font-family: "Manrope", "Avenir Next", sans-serif;
+  font-family: var(--font-ui), sans-serif;
 }
 small {
   display: block;
@@ -199,7 +199,7 @@ fieldset {
 }
 .sidebar-note > span {
   position: relative;
-  font-family: Georgia, serif;
+  font-family: var(--font-ui), sans-serif;
   font-style: italic;
   font-size: 25px;
   line-height: 1.22;
@@ -471,7 +471,7 @@ fieldset {
   color: #6c8067;
 }
 .hero-value {
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--font-ui), sans-serif;
   font-size: 59px;
   letter-spacing: -2.7px;
   line-height: 1.3;

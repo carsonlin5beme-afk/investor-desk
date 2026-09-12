@@ -16,7 +16,6 @@ import {
   Wallet,
   Target,
   Download,
-  RefreshCw,
   Settings2,
   BarChart3,
   Layers,
@@ -28,8 +27,6 @@ import {
   SlidersHorizontal,
   Menu,
   X,
-  Eye,
-  EyeOff,
   MoreHorizontal,
   Pin,
   Sparkles,
@@ -61,6 +58,8 @@ import { Journal } from "./studio/Journal";
 import { Report } from "./studio/Report";
 import { OptionsExplorer } from "./studio/OptionsExplorer";
 import { CommandPalette, type CommandItem } from "./studio/CommandPalette";
+import styles from "./dashboard-polish.module.css";
+import { OrbitRefreshIcon, OrbitVisibilityIcon } from "./SpaceControlIcons";
 
 type View = "overview" | "studio" | "journal";
 export function InvestorDesk({ portfolioId }: { portfolioId?: string }) {
@@ -326,7 +325,7 @@ export function InvestorDesk({ portfolioId }: { portfolioId?: string }) {
         : (active?.name ?? "Portfolio overview");
   return (
     <div
-      className={`desk-shell ${mobileNav ? "nav-open" : ""} ${prefs.privacy ? "privacy-mode" : ""} ${presentation ? "presentation-mode" : ""}`}
+      className={`desk-shell ${styles.dashboard} ${mobileNav ? "nav-open" : ""} ${prefs.privacy ? "privacy-mode" : ""} ${presentation ? "presentation-mode" : ""}`}
     >
       <a href="#workspace-main" className="skip-to-main">
         Skip to workspace
@@ -413,9 +412,6 @@ export function InvestorDesk({ portfolioId }: { portfolioId?: string }) {
                 )}
               </button>
             ))}
-          {!all.length && (
-            <span className="nav-empty">A place for your first idea.</span>
-          )}
         </nav>
         {prefs.archived.length > 0 && (
           <button
@@ -426,27 +422,19 @@ export function InvestorDesk({ portfolioId }: { portfolioId?: string }) {
           </button>
         )}
         <div className="sidebar-bottom">
-          <div className="sidebar-note">
-            <span>
-              A view beyond
-              <br />
-              the current price.
-            </span>
-            <p>Your ideas. A little perspective.</p>
-          </div>
           <button className="nav-item" onClick={() => setModal("settings")}>
             <Settings2 size={18} />
             Data & preferences
           </button>
-          <div className="sidebar-profile">
+          <div
+            className={`sidebar-profile ${data?.user ? "" : styles.guestProfile}`}
+          >
             <span className="profile-avatar">
               {(data?.user?.name ?? "Guest").slice(0, 1)}
             </span>
             <span>
               <strong>{data?.user?.name ?? "Your guest desk"}</strong>
-              <small>
-                {data?.user ? "Saved local workspace" : "Temporary workspace"}
-              </small>
+              {data?.user && <small>Saved local workspace</small>}
             </span>
           </div>
         </div>
@@ -492,13 +480,20 @@ export function InvestorDesk({ portfolioId }: { portfolioId?: string }) {
           <div className="topbar-right">
             <button
               className={`status-pill ${data?.mode === "demo" ? "sample" : ""}`}
+              title={
+                data?.mode === "demo"
+                  ? "Sample data: illustrative prices, not live quotes. Open data & preferences."
+                  : data
+                    ? `Provider quotes · Equity source: ${data.feeds.equityFeed}. Open data & preferences.`
+                    : "Connecting to market data. Open data & preferences."
+              }
               onClick={() => setModal("settings")}
             >
               <span />
               {data?.mode === "demo"
                 ? "Sample data"
                 : data
-                  ? "Provider quotes"
+                  ? "Quotes"
                   : "Connecting"}
             </button>
             <button
@@ -507,7 +502,7 @@ export function InvestorDesk({ portfolioId }: { portfolioId?: string }) {
               disabled={refreshing}
               onClick={load}
             >
-              <RefreshCw size={16} className={refreshing ? "spin" : ""} />
+              <OrbitRefreshIcon className={refreshing ? "spin" : ""} />
             </button>
             <button
               className="icon-button desktop-only"
@@ -520,7 +515,7 @@ export function InvestorDesk({ portfolioId }: { portfolioId?: string }) {
                   .catch((e) => setError(e.message))
               }
             >
-              {prefs.privacy ? <EyeOff size={17} /> : <Eye size={17} />}
+              <OrbitVisibilityIcon hidden={prefs.privacy} />
             </button>
             {data?.user ? (
               <button
@@ -546,20 +541,18 @@ export function InvestorDesk({ portfolioId }: { portfolioId?: string }) {
           <AmbientRadioControls />
         </header>
         <div className="desk-content">
-          <div className="page-heading">
+          <div
+            className={`page-heading ${view === "overview" ? styles.overviewHeading : ""}`}
+          >
             <div>
-              <span className="eyebrow">YOUR CAPITAL. YOUR CONVICTION.</span>
-              <h1>
-                {headerTitle}
-                <span className="heading-dot">.</span>
-              </h1>
-              <p>
-                {view === "overview"
-                  ? "A clearer view of where you stand. And what could come next."
-                  : view === "studio"
+              <h1>{headerTitle}</h1>
+              {view !== "overview" && (
+                <p>
+                  {view === "studio"
                     ? "Explore a different future, one assumption at a time."
                     : "Keep the thinking that makes the numbers meaningful."}
-              </p>
+                </p>
+              )}
             </div>
             <div className="heading-actions">
               {all.length > 0 && (
@@ -598,22 +591,23 @@ export function InvestorDesk({ portfolioId }: { portfolioId?: string }) {
             <div className="workspace-status">
               <span className="status-identity">
                 <span className="status-dot" />
-                Guest workspace <span className="status-divider">/</span>{" "}
-                Temporary
+                Guest workspace <span className="status-divider">/</span>
+                <button
+                  type="button"
+                  className={styles.temporary}
+                  aria-expanded={expandedNotice}
+                  aria-controls="guest-workspace-notice"
+                  onClick={() => setExpandedNotice((v) => !v)}
+                >
+                  Temporary
+                </button>
               </span>
-              <button
-                className="text-button status-detail"
-                aria-expanded={expandedNotice}
-                onClick={() => setExpandedNotice((v) => !v)}
-              >
-                What gets saved?
-              </button>
               <Link className="status-save" href="/sign-up">
                 {all.length ? "Save my portfolios" : "Create a profile"}
                 <ArrowRight size={15} />
               </Link>
               {expandedNotice && (
-                <p>
+                <p id="guest-workspace-notice">
                   Refreshes are safe. Guest portfolios, scenarios, and notes are
                   temporary until you save them to a profile. Ending your
                   browser session, restarting the server, or 24 hours of
@@ -680,11 +674,6 @@ export function InvestorDesk({ portfolioId }: { portfolioId?: string }) {
                       <br />
                       starts <em>here.</em>
                     </h2>
-                    <p>
-                      Give your conviction a home. Build with virtual cash,
-                      explore your targets, and see your whole portfolio come
-                      into focus.
-                    </p>
                     <button
                       className="button primary"
                       onClick={() => setModal("create")}
@@ -702,19 +691,16 @@ export function InvestorDesk({ portfolioId }: { portfolioId?: string }) {
                       {
                         n: "01",
                         title: "Make room for an idea",
-                        text: "Name a portfolio and choose its virtual starting cash.",
                         icon: Wallet,
                       },
                       {
                         n: "02",
                         title: "Build your position",
-                        text: "Explore stocks, ETFs, and standard long options.",
                         icon: Layers,
                       },
                       {
                         n: "03",
                         title: "Give your thesis a target",
-                        text: "See what your holdings could become, together.",
                         icon: Target,
                       },
                     ].map((s) => (
@@ -723,7 +709,6 @@ export function InvestorDesk({ portfolioId }: { portfolioId?: string }) {
                         <div>
                           <s.icon size={24} />
                           <h3>{s.title}</h3>
-                          <p>{s.text}</p>
                         </div>
                       </div>
                     ))}
@@ -1185,8 +1170,7 @@ export function InvestorDesk({ portfolioId }: { portfolioId?: string }) {
           )}
           <footer className="desk-footer">
             <span>
-              <BrandWordmark style={{ width: 154 }} /> <i>/</i> A little
-              perspective.
+              <BrandWordmark style={{ width: 154 }} />
             </span>
             <div>
               <Link href="/methodology">Methodology</Link>
@@ -1195,7 +1179,6 @@ export function InvestorDesk({ portfolioId }: { portfolioId?: string }) {
                 {presentation ? "Exit presentation" : "Presentation mode"}
               </button>
             </div>
-            <span>Simulated portfolios. Your own assumptions.</span>
           </footer>
         </div>
       </main>

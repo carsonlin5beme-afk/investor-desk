@@ -90,16 +90,25 @@
 }
 .primary {
   position: relative;
+  isolation: isolate;
+  overflow: hidden;
   display: inline-flex;
-  gap: 24px;
+  gap: 0;
   align-items: center;
   justify-content: center;
   min-height: 52px;
-  padding: 16px 28px;
+  min-width: 181px;
+  padding: 14px 22px;
   border: 1px solid #c6e7d64d;
   border-radius: 999px;
   color: #e6f2eb;
   font-weight: 500;
+  font-size: 18px;
+  font-family: var(--font-button, var(--font-ui)), var(--font-ui), sans-serif;
+  font-synthesis: none;
+  -webkit-text-stroke: 0;
+  letter-spacing: 0.02em;
+  line-height: 1;
   background:
     linear-gradient(165deg, #f1fff326, #b7dec90d 35%, #0719104d 68%, #d4f4e517),
     #10201966;
@@ -113,6 +122,33 @@
   transition:
     background-color 180ms ease,
     box-shadow 180ms ease;
+}
+.primary > * {
+  position: relative;
+  z-index: 1;
+}
+.primary > svg {
+  flex-shrink: 0;
+}
+.primary::before {
+  content: "";
+  pointer-events: none;
+  position: absolute;
+  inset: -50% auto -50% 0;
+  width: 40%;
+  background: linear-gradient(100deg, transparent, #e1ffee24, transparent);
+  transform: translateX(-260%) skewX(-20deg);
+  animation: workspaceSheen 11s ease-in-out infinite;
+}
+@keyframes workspaceSheen {
+  0%,
+  18% {
+    transform: translateX(-260%) skewX(-20deg);
+  }
+  62%,
+  100% {
+    transform: translateX(420%) skewX(-20deg);
+  }
 }
 .primary:hover {
   background-color: #26443680;
@@ -130,6 +166,10 @@
 }
 .secondary {
   display: inline-flex;
+  font-family: var(--font-button, var(--font-ui)), var(--font-ui), sans-serif;
+  font-synthesis: none;
+  -webkit-text-stroke: 0;
+  letter-spacing: 0.02em;
   font-size: 0.7em;
   min-height: 44px;
   align-items: center;
@@ -209,8 +249,8 @@
     font-size: 11px;
   }
   .primary {
-    padding: 15px 24px;
-    gap: 20px;
+    padding: 14px 20px;
+    gap: 14px;
   }
   .assurance {
     margin-top: 20px;
@@ -239,6 +279,10 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
+  .primary::before {
+    animation: none;
+    opacity: 0;
+  }
   .canvasHost {
     display: none !important;
   }

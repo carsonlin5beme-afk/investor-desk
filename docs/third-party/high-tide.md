@@ -1,0 +1,11 @@
+# HIGH TIDE button typography
+
+Investor Desk uses **High Tide Regular**, designed by Filipe Rolim (2013), for button labels. This is the geometric face shown as “WHARF” in the user's reference. It is distinct from the unrelated handwritten High Tide family by BLKBK. The ROME/ARENQ brand artwork remains unchanged except for the requested optical emphasis on its first I.
+
+The [author's original project](https://www.behance.net/gallery/9320391/HIGH-TIDE-free-typeface) links to Fontfabric's original free release. The [publisher's listing](https://www.fontfabric.com/fonts/high-tide/) is now retired. The original family package was recovered from [this archive mirror](https://www.fonttr.com/yone/down/hightide.zip) on September12,2026, including its original Fontfabric Free Font EULA v2.0 (June2015). The included license expressly permits commercial/personal website use, @font-face embedding, unlimited pageviews, apps, and generating webfont packages. The original PDF is preserved as [high-tide-license.pdf](high-tide-license.pdf), with extracted readable text in [high-tide-license.txt](high-tide-license.txt).
+
+Source and deployed OTF SHA-256: `485588bf51d15624a4a21eb06abfcc7aef650d4af24a4926774b2b2ca23033ee` (13,532bytes). The font program, glyphs, metrics, names, and embedding flags have not been changed. It is included only as an embedded website asset, not offered as a standalone font download or font library. Do not treat it as an OFL font or resell it.
+
+`next/font/local` serves the original compact OTFs from the app with swap loading. Button labels use the regular face without synthetic bold/italic, plus 0.02em tracking. A leading family restricted with CSS `unicode-range: U+0054,U+0074` selects the original **High Tide Sans** T/t, whose flat crossbar makes the letter more recognizable. All other characters continue using High Tide Regular; unsupported characters fall back to DM Sans. This changes font selection without modifying either font program.
+
+Original and deployed Sans OTF SHA-256: `ba62aea1595cc65d63abb5eb6a49a0b486c3cd92aaf1e0eddbf37920b539e599` (12,044 bytes), from the same licensed family package. The full fonts avoid custom glyph subsets and third-party runtime font requests. Non-button website text now uses ARENQ under its separate author license.

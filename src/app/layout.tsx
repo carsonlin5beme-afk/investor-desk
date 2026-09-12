@@ -5,27 +5,33 @@ import type { Metadata } from "next";
 import localFont from "next/font/local";
 const ui = localFont({
   src: "./fonts/dm-sans-variable.woff2",
-  variable: "--font-ui",
+  variable: "--font-fallback",
+  preload: false,
   display: "swap",
   weight: "400 700",
 });
-const editorial = localFont({
-  src: [
-    {
-      path: "./fonts/newsreader-variable.woff2",
-      style: "normal",
-      weight: "400 600",
-    },
-    {
-      path: "./fonts/newsreader-italic-variable.woff2",
-      style: "italic",
-      weight: "400 600",
-    },
-  ],
-  variable: "--font-editorial",
+const buttonFace = localFont({
+  src: "./fonts/high-tide.otf",
+  variable: "--font-button-regular",
   display: "swap",
-  adjustFontFallback: "Times New Roman",
-  weight: "400 600",
+  weight: "400",
+  adjustFontFallback: false,
+});
+const rome = localFont({
+  src: "./fonts/arenq.otf",
+  variable: "--font-rome",
+  display: "swap",
+  weight: "400",
+  adjustFontFallback: false,
+});
+// The original Sans variant supplies only the clearer T/t crossbars.
+const buttonT = localFont({
+  src: "./fonts/high-tide-sans.otf",
+  variable: "--font-button-t",
+  display: "swap",
+  weight: "400",
+  adjustFontFallback: false,
+  declarations: [{ prop: "unicode-range", value: "U+0054,U+0074" }],
 });
 
 import "@/app/globals.css";
@@ -46,7 +52,7 @@ export default function RootLayout({
     <html
       lang="en"
       data-theme="dark"
-      className={`${ui.variable} ${editorial.variable}`}
+      className={`${ui.variable} ${rome.variable} ${buttonFace.variable} ${buttonT.variable}`}
       suppressHydrationWarning
     >
       <head>

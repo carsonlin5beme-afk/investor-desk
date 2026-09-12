@@ -1,12 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="14" fill="#09111b" />
-  <svg x="7" y="8" width="50" height="48" viewBox="30 -770 865 790">
-    <path
-      d="M140 -335 L50 -335 L50 0 L60 0 L60 -325 L140 -325 L140 0 L150 0 L150 -750 L140 -750 L140 -425 L60 -425 L60 -750 L50 -750 L50 -415 L140 -415 Z M250 0 L260 0 L260 -650 L340 -650 L340 0 L500 0 C707 0 875 -168 875 -375 C875 -582 707 -750 500 -750 L250 -750 L250 -740 L500 -740 C701 -740 865 -576 865 -375 C865 -174 701 -10 500 -10 L350 -10 L350 -90 L500 -90 C657 -90 785 -218 785 -375 C785 -532 657 -660 500 -660 L250 -660 Z M775 -375 C775 -223 652 -100 500 -100 L350 -100 L350 -650 L500 -650 C652 -650 775 -527 775 -375 Z"
-      fill="#bbd8c9"
-      stroke="#bbd8c9"
-      stroke-width="0.65"
-      vector-effect="non-scaling-stroke"
-    />
-  </svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-5 0 240 240" >
+  <title>Investor Desk</title>
+  <style>@media (prefers-color-scheme: light) { .platinum { stop-color: #28503f; } .emerald { stop-color: #3b7558; } }</style>
+  <defs><linearGradient id="emblem-c-metal" x1="0" y1="0" x2="1" y2=".7"><stop offset="0" class="platinum" stop-color="#d9e3de"/><stop offset=".5" class="platinum" stop-color="#d9e3de"/><stop offset=".82" class="emerald" stop-color="#a5d5bc"/><stop offset="1" class="platinum" stop-color="#d9e3de"/></linearGradient></defs>
+  <g fill="none" stroke="url(#emblem-c-metal)" stroke-width="0.85" stroke-linecap="butt" stroke-linejoin="miter"><path data-emblem-path="outer-d-and-lower-cap" d="M53 32V6H115C177 6 223 56 223 116C223 179 171 233 88 233V54H6" vector-effect="non-scaling-stroke"/><path data-emblem-path="inner-d-and-upper-cap" d="M65 32V19H114C167 19 210 64 210 116C210 169 163 217 101 220V41H6" vector-effect="non-scaling-stroke"/><path data-emblem-path="i-stems" d="M36 64V190M50 64V190" vector-effect="non-scaling-stroke"/><path data-emblem-path="i-foot-caps" d="M6 199H76M6 211H76" vector-effect="non-scaling-stroke"/><path data-emblem-path="outer-ribbon" d="M114 96C150 118 178 150 185 181" vector-effect="non-scaling-stroke"/><path data-emblem-path="inner-ribbon" d="M114 109C146 129 169 159 174 192" vector-effect="non-scaling-stroke"/></g>
 </svg>

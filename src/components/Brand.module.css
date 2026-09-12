@@ -40,4 +40,5 @@
   max-width: 100%;
   vertical-align: middle;
   line-height: 1;
+  filter: drop-shadow(0 0 3px #a5d5bc30);
 }

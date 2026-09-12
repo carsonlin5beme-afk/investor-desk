@@ -10,7 +10,7 @@
 }
 .page h1,
 .page h2 {
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--font-ui), sans-serif;
   font-weight: 400;
 }
 .page h1 em,
@@ -352,7 +352,7 @@
 }
 .previewTotal {
   font-size: clamp(32px, 3.3vw, 49px);
-  font-family: "Manrope", "Avenir Next", sans-serif;
+  font-family: var(--font-ui), sans-serif;
   line-height: 1.1;
   font-weight: 500;
   letter-spacing: -2px;
@@ -378,7 +378,7 @@
   fill: var(--lp-muted);
   font-size: 7px;
   letter-spacing: 0.65px;
-  font-family: "DM Sans", sans-serif;
+  font-family: var(--font-ui), sans-serif;
 }
 .chartCaption {
   display: block;
@@ -501,10 +501,10 @@
   margin: 0 auto;
   border-block: 1px solid var(--lp-line);
   padding: 23px 0;
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(170px, 1.15fr) minmax(0, 4fr);
   align-items: center;
-  gap: 24px;
+  gap: 32px;
 }
 .assetStrip p {
   font-size: 11px;
@@ -515,22 +515,30 @@
   color: var(--lp-muted);
 }
 .assetStrip > div {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  width: 100%;
   align-items: center;
-  gap: 39px;
-  font-family: Georgia, serif;
+  gap: 0;
+  font-family: var(--font-ui), sans-serif;
   font-size: 23px;
   letter-spacing: -0.5px;
   color: var(--lp-muted);
 }
+.assetStrip > div span {
+  position: relative;
+  text-align: center;
+  white-space: nowrap;
+}
 .assetStrip > div span + span::before {
   content: "+";
-  font-family: "DM Sans", sans-serif;
-  display: inline-block;
+  font-family: var(--font-ui), sans-serif;
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translate(-50%, -50%);
   color: var(--lp-muted);
   font-size: 13px;
-  margin-right: 39px;
-  vertical-align: 3px;
 }
 .stripCaption {
   color: var(--lp-muted);
@@ -577,12 +585,12 @@
   color: var(--lp-muted);
 }
 .stepTop > span {
-  font-family: Georgia, serif;
+  font-family: var(--font-ui), sans-serif;
   font-size: 18px;
   color: var(--lp-muted);
 }
 .steps h3 {
-  font-family: "Manrope", sans-serif;
+  font-family: var(--font-ui), sans-serif;
   font-size: 16px;
   letter-spacing: -0.5px;
   font-weight: 600;
@@ -627,15 +635,51 @@
   letter-spacing: 1.5px;
 }
 .accountRow {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
   display: flex;
   align-items: center;
   gap: 13px;
   padding: 23px 16px;
   background: var(--surface);
   border: 1px solid var(--lp-line);
-  border-radius: 4px;
+  border-radius: 10px;
   box-shadow: 0 6px 16px #4d5f3010;
   margin-top: 10px;
+  transition:
+    translate 300ms ease,
+    border-color 300ms ease,
+    box-shadow 300ms ease;
+}
+.accountRow::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: linear-gradient(
+    125deg,
+    #b7efd827,
+    #52be8e0d 45%,
+    transparent 75%
+  );
+  opacity: 0;
+  transition: opacity 300ms ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .accountRow:hover {
+    translate: 0 -5px;
+    border-color: #90d8b57a;
+    box-shadow:
+      inset 0 1px 1px #d2f7e345,
+      inset 0 -1px 1px #0006,
+      0 12px 22px #0004,
+      0 0 25px #54c59525;
+  }
+  .accountRow:hover::before {
+    opacity: 1;
+  }
 }
 .accountRow:nth-child(3) {
   transform: translateX(8px);
@@ -671,7 +715,7 @@
   font-size: 16px;
   letter-spacing: -0.6px;
   text-align: right;
-  font-family: "Manrope", sans-serif;
+  font-family: var(--font-ui), sans-serif;
   font-variant-numeric: tabular-nums;
 }
 .accountAmount small {
@@ -679,22 +723,6 @@
   letter-spacing: 1px;
   margin-top: 6px;
   font-size: 6px;
-}
-.workspaceVisualBottom {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding-top: 18px;
-  font-size: 8px;
-  color: var(--lp-muted);
-}
-.hubMark {
-  display: grid;
-  place-items: center;
-  width: 41px;
-  height: 41px;
-  border: 1px solid var(--lp-line);
-  border-radius: 50%;
 }
 .workspaceCopy {
   max-width: 440px;
@@ -987,11 +1015,7 @@
     margin-inline: 38px;
   }
   .assetStrip > div {
-    gap: 20px;
     font-size: 20px;
-  }
-  .assetStrip > div span + span::before {
-    margin-right: 20px;
   }
   .stripCaption {
     display: none;
@@ -1081,10 +1105,6 @@
   }
   .assetStrip > div {
     font-size: 18px;
-    gap: 15px;
-  }
-  .assetStrip > div span + span::before {
-    margin-right: 15px;
   }
   .workflow,
   .questions {
@@ -1133,7 +1153,7 @@
     font-size: 7px;
   }
   .accountAmount {
-    flex: 1 0 100%;
+    flex: 0 0 calc(100% - 35px);
     text-align: left;
     margin-left: 35px;
   }
@@ -1309,7 +1329,7 @@
   }
   .assetStrip {
     margin-inline: 20px;
-    flex-direction: column;
+    grid-template-columns: minmax(0, 1fr);
     gap: 17px;
     text-align: center;
     padding: 22px 0;
@@ -1325,12 +1345,9 @@
   }
   .assetStrip > div {
     font-size: 16px;
-    gap: 12px;
   }
   .assetStrip > div span + span::before {
     font-size: 10px;
-    margin-right: 12px;
-    vertical-align: 2px;
   }
   .workflow {
     padding: 55px 20px 48px;
@@ -1484,6 +1501,15 @@
     text-align: left;
   }
 }
+@media (max-width: 460px) {
+  .assetStrip > div {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    row-gap: 12px;
+  }
+  .assetStrip > div span:nth-child(3)::before {
+    content: none;
+  }
+}
 @media (max-width: 360px) {
   .header,
   .hero {
@@ -1512,10 +1538,6 @@
   }
   .assetStrip > div {
     font-size: 14px;
-    gap: 9px;
-  }
-  .assetStrip > div span + span::before {
-    margin-right: 9px;
   }
   .closing h2 {
     font-size: 45px;
@@ -1731,9 +1753,6 @@
 }
 .stripCaption {
   font-size: 10px;
-}
-.workspaceVisualBottom {
-  font-size: 11px;
 }
 .accountAmount small {
   font-size: 10px;
@@ -2184,6 +2203,49 @@
 .titleHeader > [data-ambient-radio] {
   order: 0;
 }
+.header.titleHeader .headerCta {
+  justify-content: center;
+  width: 89.7px;
+  min-width: 89.7px;
+  height: 35.2px;
+  min-height: 35.2px;
+  padding: 5px 8px;
+  gap: 0;
+  font-size: 17px;
+  line-height: 1;
+  font-weight: 400;
+  font-family: var(--font-button, var(--font-ui)), var(--font-ui), sans-serif;
+  font-synthesis: none;
+  -webkit-text-stroke: 0;
+  letter-spacing: 0.02em;
+  border-radius: 10px;
+  border-color: #a6bec047;
+  background:
+    linear-gradient(160deg, #c9e5ec14, #05090f30 48%, #afc9df08), #080d14ba;
+  box-shadow:
+    inset 0 1px 1px #d1e6ef3d,
+    inset 1px 0 1px #cedee71a,
+    inset 0 -2px 2px #0008,
+    0 5px 13px #0004;
+  -webkit-backdrop-filter: blur(12px) saturate(115%);
+  backdrop-filter: blur(12px) saturate(115%);
+  transition:
+    box-shadow 220ms ease,
+    border-color 220ms ease;
+}
+.header.titleHeader .headerCta:hover {
+  border-color: #b6cfd473;
+  box-shadow:
+    inset 0 1px 1px #e0f0f65e,
+    inset 1px 0 1px #cedee726,
+    inset 0 -2px 2px #0008,
+    0 6px 18px #0005;
+}
+.header.titleHeader .headerCta:active {
+  box-shadow:
+    inset 0 2px 5px #0009,
+    inset 0 -1px 1px #d1e6ef30;
+}
 @media (max-width: 760px) {
   .header.titleHeader {
     gap: 12px;
@@ -2243,6 +2305,9 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
+  .accountRow:hover {
+    translate: none;
+  }
   .steps article:hover {
     transform: none;
   }
@@ -2271,4 +2336,13 @@
 }
 .brandSignature > [data-brand-wordmark] {
   width: 154px;
+}
+
+.primaryCta,
+.lightCta,
+.textCta {
+  font-family: var(--font-button, var(--font-ui)), var(--font-ui), sans-serif;
+  font-synthesis: none;
+  -webkit-text-stroke: 0;
+  letter-spacing: 0.02em;
 }

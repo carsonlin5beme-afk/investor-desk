@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 import { brandArtwork } from "./brand-artwork";
+import { brandEmblem } from "./brand-emblem";
 import styles from "./Brand.module.css";
 
 const accessibleText: CSSProperties = {
@@ -16,25 +17,52 @@ const accessibleText: CSSProperties = {
 
 type BrandProps = { className?: string; style?: CSSProperties };
 
-function BrandGlyphs({ word }: { word: keyof typeof brandArtwork }) {
+function BrandGlyphs({
+  word,
+  emphasizeInitial = false,
+}: {
+  word: keyof typeof brandArtwork;
+  emphasizeInitial?: boolean;
+}) {
   const artwork = brandArtwork[word];
   const [x, y, width, height] = artwork.viewBox.split(" ").map(Number);
+  // A capped double-line I avoids the original glyph's H-like middle crossbar.
+  const replaceInitial = word === "investor";
+  const prominentInitial = emphasizeInitial && replaceInitial;
+  const initialEnd = artwork.d.indexOf("Z") + 1;
+  const extraWidth = replaceInitial ? (prominentInitial ? 140 : 80) : 0;
+  const initialPath =
+    "M50 -750H290V-740H50Z M50 -675H290V-665H50Z " +
+    "M130 -650H140V-100H130Z M200 -650H210V-100H200Z " +
+    "M50 -85H290V-75H50Z M50 -10H290V0H50Z";
   return (
     <svg
       data-brand-word={word}
-      viewBox={[x - 20, y - 20, width + 40, height + 40].join(" ")}
-      width={artwork.width + 40}
+      viewBox={[x - 20, y - 20, width + 40 + extraWidth, height + 40].join(" ")}
+      width={artwork.width + 40 + extraWidth}
       height={artwork.height + 40}
       aria-hidden="true"
       focusable="false"
     >
-      <path
-        d={artwork.d}
-        fill="currentColor"
-        stroke="currentColor"
-        strokeWidth={0.42}
-        vectorEffect="non-scaling-stroke"
-      />
+      <g fill="currentColor" stroke="currentColor">
+        {replaceInitial ? (
+          <path
+            data-brand-initial=""
+            d={initialPath}
+            transform={
+              prominentInitial ? undefined : "translate(12.5 0) scale(.75 1)"
+            }
+            strokeWidth={0.42}
+            vectorEffect="non-scaling-stroke"
+          />
+        ) : null}
+        <path
+          d={replaceInitial ? artwork.d.slice(initialEnd) : artwork.d}
+          transform={replaceInitial ? `translate(${extraWidth} 0)` : undefined}
+          strokeWidth={0.42}
+          vectorEffect="non-scaling-stroke"
+        />
+      </g>
     </svg>
   );
 }
@@ -44,7 +72,12 @@ export function BrandWordmark({
   tone = "inherit",
   className = "",
   style,
-}: BrandProps & { layout?: "inline" | "stacked"; tone?: "inherit" | "split" }) {
+  emphasizeInitial = false,
+}: BrandProps & {
+  layout?: "inline" | "stacked";
+  tone?: "inherit" | "split";
+  emphasizeInitial?: boolean;
+}) {
   return (
     <span
       data-brand-wordmark=""
@@ -58,7 +91,7 @@ export function BrandWordmark({
       style={style}
     >
       <span style={accessibleText}>Investor Desk</span>
-      <BrandGlyphs word="investor" />
+      <BrandGlyphs word="investor" emphasizeInitial={emphasizeInitial} />
       <BrandGlyphs word="desk" />
     </span>
   );
@@ -77,7 +110,23 @@ export function BrandMonogram({
       aria-hidden={decorative || undefined}
     >
       {decorative ? null : <span style={accessibleText}>Investor Desk</span>}
-      <BrandGlyphs word="id" />
+      <svg
+        data-brand-emblem="c"
+        viewBox={brandEmblem.viewBox}
+        width={brandEmblem.width}
+        height={brandEmblem.height}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={brandEmblem.compactStrokeWidth}
+        strokeLinecap={brandEmblem.strokeLinecap}
+        strokeLinejoin={brandEmblem.strokeLinejoin}
+        aria-hidden="true"
+        focusable="false"
+      >
+        {brandEmblem.paths.map(({ id, d }) => (
+          <path key={id} d={d} vectorEffect="non-scaling-stroke" />
+        ))}
+      </svg>
     </span>
   );
 }

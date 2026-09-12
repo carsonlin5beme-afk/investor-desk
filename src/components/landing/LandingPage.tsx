@@ -4,7 +4,6 @@ import { BrandWordmark } from "@/components/Brand";
 import {
   ArrowDown,
   ArrowUpRight,
-  BarChart3,
   Check,
   Layers,
   LockKeyhole,
@@ -46,7 +45,7 @@ export function LandingPage() {
       </a>
       <header className={`${styles.header} ${styles.titleHeader}`}>
         <Link href="/sign-in" className={styles.headerCta}>
-          Sign in <ArrowUpRight size={16} aria-hidden="true" />
+          Sign in
         </Link>
         <AmbientRadioControls />
       </header>
@@ -62,11 +61,12 @@ export function LandingPage() {
                 layout="stacked"
                 tone="split"
                 className={hero.titleBrand}
+                emphasizeInitial
               />
             </h1>
             <div className={hero.actions}>
               <Link href="/dashboard" className={hero.primary}>
-                Workspace <ArrowUpRight size={17} aria-hidden="true" />
+                <span>Workspace</span>
               </Link>
               <a href="#explore-example" className={hero.secondary}>
                 Explore the example <ArrowDown size={15} aria-hidden="true" />
@@ -206,12 +206,6 @@ export function LandingPage() {
               </div>
               <span className={styles.accountAmount}>
                 $50,000<small>STARTING CASH</small>
-              </span>
-            </div>
-            <div className={styles.workspaceVisualBottom}>
-              <span>Illustrative portfolios. Entirely virtual.</span>
-              <span className={styles.hubMark}>
-                <BarChart3 size={32} strokeWidth={1} aria-hidden="true" />
               </span>
             </div>
           </div>
