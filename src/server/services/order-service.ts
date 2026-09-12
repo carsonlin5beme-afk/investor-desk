@@ -2,11 +2,13 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { env } from "@/lib/env";
 import { decideFill, estimateOrderNotional } from "@/server/domain/fill-engine";
-import { OrderTicket } from "@/server/domain/types";
-import { providers } from "@/server/providers/factory";
+import { OrderTicket, MarketQuote } from "@/server/domain/types";
+import { isQuoteStale } from "@/server/domain/staleness";
 import { decodeContract } from "@/server/providers/demo";
+import { assertOptionNotExpired } from "@/lib/option-expiration";
 import { getLiveQuote } from "./quote-service";
 import type { ClosedSessionBasis } from "@/lib/quote-status";
+import { optionDeliverableUnverified } from "@/lib/quote-status";
 import {
   assertClosedSessionCurrent,
   auditQuoteMetadata,
@@ -14,6 +16,30 @@ import {
   executionAuditNote,
 } from "./closed-session-simulation";
 const D = Prisma.Decimal;
+export function assertExecutionCurrent(
+  ticket: OrderTicket,
+  quote: MarketQuote,
+  closedSession: ClosedSessionBasis | null,
+) {
+  assertClosedSessionCurrent(closedSession);
+  if (ticket.assetClass === "OPTION") {
+    if (optionDeliverableUnverified(quote.source))
+      throw new Error(
+        "Standard deliverable unverified. Tradier contract prices remain visible, but new simulated fills are unavailable with this source.",
+      );
+    const meta = decodeContract(ticket.optionContractSymbol!);
+    assertOptionNotExpired(meta.expiration, meta.underlying);
+  }
+  if (
+    !closedSession &&
+    quote.source !== "demo" &&
+    (/delayed|indicative/.test(quote.source) ||
+      isQuoteStale(quote.asOf, env.QUOTE_STALE_SECONDS))
+  )
+    throw new Error(
+      "Quote became stale before execution. Refresh and preview the order again.",
+    );
+}
 export async function resolveTicket(ticket: OrderTicket, execute = false) {
   const symbol =
     ticket.assetClass === "OPTION"
@@ -29,19 +55,7 @@ export async function resolveTicket(ticket: OrderTicket, execute = false) {
         ticket.optionExpiration?.toISOString().slice(0, 10)
     )
       throw new Error("Option contract does not match selected terms.");
-    if (meta.expiration.getTime() <= Date.now())
-      throw new Error("Expired contracts cannot be traded.");
-    const contract = await providers.options.getOptionQuote(symbol);
-    if (
-      !contract ||
-      contract.underlying !== ticket.symbol ||
-      contract.strike !== meta.strike ||
-      contract.right !== meta.right ||
-      (contract.multiplier ?? 100) !== 100
-    )
-      throw new Error(
-        "Contract unavailable or adjusted. Only standard 100-share contracts are supported.",
-      );
+    assertOptionNotExpired(meta.expiration, meta.underlying);
   }
   const quote = await getLiveQuote(symbol, ticket.assetClass, true);
   if (!quote)
@@ -95,6 +109,7 @@ export async function resolveTicket(ticket: OrderTicket, execute = false) {
     assertClosedSessionCurrent(expected);
     closedSession.validUntil = expected.validUntil;
   }
+  assertExecutionCurrent(ticket, quote, closedSession);
   const decision = decideFill(ticket, quote);
   return { symbol, quote, decision, closedSession };
 }
@@ -226,7 +241,7 @@ export const executeOrder = async (ticket: OrderTicket) => {
       await tx.$queryRaw`SELECT id FROM "Portfolio" WHERE id = ${ticket.portfolioId} FOR UPDATE`;
       const duplicate = await replay(tx, ticket);
       if (duplicate) return duplicate;
-      assertClosedSessionCurrent(closedSession);
+      assertExecutionCurrent(ticket, quote, closedSession);
       const { portfolio, position: existing } = await checkAccount(
         tx,
         ticket,
@@ -236,7 +251,7 @@ export const executeOrder = async (ticket: OrderTicket) => {
       const nextCash = portfolio.cashBalance.plus(
         ticket.side === "BUY" ? -notional : notional,
       );
-      assertClosedSessionCurrent(closedSession);
+      assertExecutionCurrent(ticket, quote, closedSession);
       await tx.portfolio.update({
         where: { id: portfolio.id },
         data: { cashBalance: nextCash },
@@ -340,7 +355,7 @@ export const executeOrder = async (ticket: OrderTicket) => {
           realizedPnL,
         },
       });
-      assertClosedSessionCurrent(closedSession);
+      assertExecutionCurrent(ticket, quote, closedSession);
       return {
         order,
         fill,

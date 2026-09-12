@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { Holding, Portfolio } from "./desk-types";
 import { blackScholesPrice } from "@/server/domain/black-scholes";
+import { resolveOptionExpiry, optionExpiryPolicy } from "./option-expiration";
 
 const finite = z.number().finite();
 // Match the projection service's per-position cent rounding without importing
@@ -44,6 +45,7 @@ export const scenarioSchema = z.object({
   name: z.string().trim().min(1).max(80),
   notes: z.string().max(4000),
   capturedAt: z.string().datetime(),
+  expirationPolicy: z.string().max(100).optional(),
   portfolioNames: z.array(z.string().max(80)).max(100),
   cash: finite.nonnegative().max(1e20),
   assets: z.array(scenarioAssetSchema).max(2000),
@@ -144,7 +146,10 @@ export function assetFromHolding(h: Holding): ScenarioAsset {
     option: o
       ? {
           strike: Number(o.strike),
-          expiration: new Date(o.expiration).toISOString(),
+          expiration: resolveOptionExpiry(
+            o.expiration,
+            o.underlying,
+          ).modelExpirationAt.toISOString(),
           right: o.right,
           iv: h.projection.impliedVolatility ?? 0.6,
           multiplier: o.multiplier,
@@ -178,7 +183,10 @@ export function valueAt(
     );
   const years = Math.max(
     0,
-    (new Date(o.expiration).getTime() -
+    (resolveOptionExpiry(
+      o.expiration,
+      asset.symbol,
+    ).modelExpirationAt.getTime() -
       at -
       assumptions.daysForward * 86400000) /
       (365 * 86400000),
@@ -228,6 +236,7 @@ export function snapshot(portfolios: Portfolio[], name: string): SavedScenario {
     name,
     notes: "",
     capturedAt: new Date().toISOString(),
+    expirationPolicy: optionExpiryPolicy,
     portfolioNames: portfolios.map((p) => p.name),
     cash: portfolios.reduce((s, p) => s + p.cashBalance, 0),
     assets: portfolios.flatMap((p) => p.positions.map(assetFromHolding)),

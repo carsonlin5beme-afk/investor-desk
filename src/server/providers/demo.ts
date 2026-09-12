@@ -1,6 +1,7 @@
 import { AssetClass, OptionRight } from "@prisma/client";
 import { blackScholesPrice } from "@/server/domain/black-scholes";
 import { MarketQuote } from "@/server/domain/types";
+import { resolveOptionExpiry } from "@/lib/option-expiration";
 import {
   EquityDataProvider,
   OptionsDataProvider,
@@ -107,9 +108,10 @@ export function decodeContract(symbol: string) {
   if (!m) throw new Error("Invalid standard option contract symbol.");
   return {
     underlying: m[1],
-    expiration: new Date(
-      `20${m[2].slice(0, 2)}-${m[2].slice(2, 4)}-${m[2].slice(4, 6)}T20:00:00.000Z`,
-    ),
+    expiration: resolveOptionExpiry(
+      `20${m[2].slice(0, 2)}-${m[2].slice(2, 4)}-${m[2].slice(4, 6)}`,
+      m[1],
+    ).modelExpirationAt,
     right: m[3] === "C" ? OptionRight.CALL : OptionRight.PUT,
     strike: Number(m[4]) / 1000,
   };
@@ -150,6 +152,10 @@ export class DemoOptionsProvider implements OptionsDataProvider {
       d.setUTCDate(1);
       d.setUTCMonth(d.getUTCMonth() + month);
       d.setUTCDate(15 + ((5 - d.getUTCDay() + 7) % 7));
+      // Choose an actual trading date when authoring a new illustrative monthly
+      // contract. Existing/provider contract identities are never rolled here.
+      while (resolveOptionExpiry(d, underlying).scheduleStatus === "CLOSED")
+        d.setUTCDate(d.getUTCDate() - 1);
       return d.toISOString().slice(0, 10);
     });
   }

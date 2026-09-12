@@ -3,7 +3,9 @@ import { useMemo, useState } from "react";
 import { money } from "@/lib/desk-types";
 import { blackScholesPrice } from "@/server/domain/black-scholes";
 import { ValueChart } from "./ValueChart";
+import { resolveOptionExpiry } from "@/lib/option-expiration";
 export function OptionsExplorer({
+  underlying,
   spot,
   strike,
   right,
@@ -13,6 +15,7 @@ export function OptionsExplorer({
   quantity = 1,
   multiplier = 100,
 }: {
+  underlying: string;
   spot: number;
   strike: number;
   right: "CALL" | "PUT";
@@ -32,9 +35,10 @@ export function OptionsExplorer({
     () => Date.now(),
     [expiration, spot, strike, premium],
   );
+  const expiry = resolveOptionExpiry(expiration, underlying);
   const remaining = Math.max(
       0,
-      (new Date(expiration).getTime() - valuationAt) / 86400000 - days,
+      (expiry.modelExpirationAt.getTime() - valuationAt) / 86400000 - days,
     ),
     min = 0,
     max = Math.max(spot, strike, 1) * 2;
@@ -139,7 +143,7 @@ export function OptionsExplorer({
             max={Math.max(
               1,
               Math.ceil(
-                (new Date(expiration).getTime() - valuationAt) / 86400000,
+                (expiry.modelExpirationAt.getTime() - valuationAt) / 86400000,
               ),
             )}
             value={days}
@@ -200,6 +204,9 @@ export function OptionsExplorer({
         P/L includes the entry premium. Model uses 4% interest, zero dividends,
         and a European exercise approximation. Model changes here are
         exploratory and do not edit an order or holding target.
+        {expiry.scheduleStatus !== "KNOWN"
+          ? " The expiration-day calendar is unverified; the model assumes a normal Eastern session close."
+          : ""}
       </p>
     </div>
   );

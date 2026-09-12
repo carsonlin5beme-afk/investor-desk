@@ -12,7 +12,7 @@ import { OptionsExplorer } from "@/components/studio/OptionsExplorer";
 let root: Root | undefined;
 let container: HTMLDivElement;
 beforeEach(() => {
-  vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-01-01T00:00:00.000Z"));
+  vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-01-15T21:00:00.000Z"));
   vi.stubGlobal(
     "ResizeObserver",
     class {
@@ -192,16 +192,41 @@ describe("chart inspection", () => {
 });
 
 const option = {
+  underlying: "AAPL",
   spot: 100,
   strike: 100,
   right: "CALL" as const,
-  expiration: "2027-01-01T00:00:00.000Z",
+  expiration: "2027-01-15T21:00:00.000Z",
   premium: 6,
   iv: 0.6,
   quantity: 2,
 };
 
 describe("option model interactions", () => {
+  it.each([
+    "2030-01-18T21:14:59Z",
+    "2030-01-18T21:15:00Z",
+    "2030-01-18T23:59:59Z",
+  ])(
+    "retains unknown-cutoff provenance before/at/after nominal model expiry at %s",
+    async (instant) => {
+      vi.mocked(Date.now).mockReturnValue(Date.parse(instant));
+      await render(
+        createElement(OptionsExplorer, {
+          ...option,
+          underlying: "SPY",
+          expiration: "2030-01-18T21:15:00Z",
+        }),
+      );
+      expect(container.querySelector(".fine-print")?.textContent).toContain(
+        "expiration-day calendar is unverified",
+      );
+      await moveRange(explorerRange("Days forward"), 1);
+      expect(container.querySelector(".fine-print")?.textContent).toContain(
+        "expiration-day calendar is unverified",
+      );
+    },
+  );
   it("represents a valid high-IV quote within the slider's actual range", async () => {
     await render(createElement(OptionsExplorer, { ...option, iv: 3.5 }));
     const slider = explorerRange("Model volatility");

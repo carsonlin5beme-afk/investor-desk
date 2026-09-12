@@ -5,6 +5,11 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { jsonError } from "@/server/api/http";
 import { providers } from "@/server/providers/factory";
+import { isStandardOptionContract } from "@/server/providers/option-contract";
+import {
+  optionExpirationDate,
+  resolveOptionExpiry,
+} from "@/lib/option-expiration";
 
 import { optionsSetupIssue } from "@/server/services/quote-status";
 export const dynamic = "force-dynamic";
@@ -36,9 +41,15 @@ export async function GET(request: NextRequest) {
       symbol,
       expiration,
     );
-    const filtered = right
-      ? contracts.filter((contract) => contract.right === right)
-      : contracts;
+    const filtered = contracts.filter(
+      (contract) =>
+        isStandardOptionContract(contract.contractSymbol, contract) &&
+        contract.underlying === symbol &&
+        optionExpirationDate(contract.expiration) === expiration &&
+        (!right || contract.right === right) &&
+        resolveOptionExpiry(contract.expiration, symbol).scheduleStatus !==
+          "CLOSED",
+    );
 
     return NextResponse.json({
       symbol,
@@ -56,6 +67,7 @@ export async function GET(request: NextRequest) {
           underlying: contract.underlying,
           right: contract.right,
           strike: contract.strike,
+          multiplier: contract.multiplier,
           expiration: contract.expiration.toISOString(),
           bid: contract.bid,
           ask: contract.ask,

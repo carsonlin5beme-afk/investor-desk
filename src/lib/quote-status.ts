@@ -17,6 +17,10 @@ export type QuoteStatus = {
   connectionRequired: boolean;
   closedSession?: ClosedSessionBasis;
 };
+// Tradier's quote/chain schema does not certify the standard deliverable.
+// Keep its data visible, without authorizing a new simulated option fill.
+export const optionDeliverableUnverified = (source: string) =>
+  source === "tradier" || source === "tradier-delayed";
 export function quoteStatus(input: {
   source: string;
   asOf?: string | null;
@@ -108,6 +112,14 @@ export function quoteStatus(input: {
       "IEX exchange only",
       "This is a single-exchange quote, not the consolidated U.S. market. Use the SIP feed for consolidated stock quotes.",
       false,
+      true,
+    );
+  if (optionDeliverableUnverified(input.source))
+    return status(
+      "UNVERIFIED_CONTRACT",
+      "Standard deliverable unverified",
+      "Tradier does not provide the standard-deliverable verification this simulator requires. Contract prices remain visible, but new simulated fills are unavailable with this source.",
+      true,
       true,
     );
   return status(

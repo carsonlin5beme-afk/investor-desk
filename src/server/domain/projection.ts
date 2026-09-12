@@ -83,18 +83,18 @@ export interface OptionModelProjectionInput {
 export const projectOptionModelValue = (
   input: OptionModelProjectionInput,
 ): number | null => {
-  if (input.targetUnderlyingPrice == null || input.targetUnderlyingPrice < 0) {
+  if (
+    input.targetUnderlyingPrice == null ||
+    !Number.isFinite(input.targetUnderlyingPrice) ||
+    input.targetUnderlyingPrice < 0 ||
+    !Number.isFinite(input.contracts) ||
+    input.contracts < 0 ||
+    !Number.isFinite(input.multiplier) ||
+    input.multiplier <= 0
+  ) {
     return null;
   }
 
-  if (input.targetUnderlyingPrice === 0)
-    return projectOptionIntrinsicValue(
-      input.right,
-      input.strike,
-      input.contracts,
-      input.multiplier,
-      0,
-    );
   const now = input.now ?? new Date();
   const msToExpiry = input.expiration.getTime() - now.getTime();
   const yearsToExpiry = Math.max(msToExpiry / (1000 * 60 * 60 * 24 * 365), 0);
@@ -104,7 +104,7 @@ export const projectOptionModelValue = (
     strike: input.strike,
     timeToExpiryYears: yearsToExpiry,
     riskFreeRate: input.riskFreeRate ?? 0.04,
-    volatility: Math.max(input.impliedVolatility, 0.0001),
+    volatility: input.impliedVolatility,
     isCall: input.right === OptionRight.CALL,
   });
 

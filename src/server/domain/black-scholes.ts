@@ -23,9 +23,28 @@ export const blackScholesPrice = (input: BlackScholesInput): number => {
   const { spot, strike, timeToExpiryYears, riskFreeRate, volatility, isCall } =
     input;
 
-  if (timeToExpiryYears <= 0 || volatility <= 0 || spot <= 0 || strike <= 0) {
+  if (
+    ![spot, strike, timeToExpiryYears, riskFreeRate, volatility].every(
+      Number.isFinite,
+    ) ||
+    spot < 0 ||
+    strike < 0 ||
+    volatility < 0
+  )
+    throw new Error("Invalid Black-Scholes inputs.");
+  if (timeToExpiryYears <= 0) {
     return Math.max(isCall ? spot - strike : strike - spot, 0);
   }
+  const discountedStrike = strike * Math.exp(-riskFreeRate * timeToExpiryYears);
+  if (!Number.isFinite(discountedStrike))
+    throw new Error("Invalid Black-Scholes discount factor.");
+  if (spot === 0) return isCall ? 0 : discountedStrike;
+  if (strike === 0) return isCall ? spot : 0;
+  if (volatility === 0)
+    return Math.max(
+      isCall ? spot - discountedStrike : discountedStrike - spot,
+      0,
+    );
 
   const sqrtT = Math.sqrt(timeToExpiryYears);
   const d1 =
@@ -35,14 +54,8 @@ export const blackScholesPrice = (input: BlackScholesInput): number => {
   const d2 = d1 - volatility * sqrtT;
 
   if (isCall) {
-    return (
-      spot * normalCdf(d1) -
-      strike * Math.exp(-riskFreeRate * timeToExpiryYears) * normalCdf(d2)
-    );
+    return spot * normalCdf(d1) - discountedStrike * normalCdf(d2);
   }
 
-  return (
-    strike * Math.exp(-riskFreeRate * timeToExpiryYears) * normalCdf(-d2) -
-    spot * normalCdf(-d1)
-  );
+  return discountedStrike * normalCdf(-d2) - spot * normalCdf(-d1);
 };

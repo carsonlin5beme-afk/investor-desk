@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-vi.mock("@/server/services/order-service", async () => {
+vi.mock("@/server/services/order-service", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/server/services/order-service")>();
   const { decideFill } = await import("@/server/domain/fill-engine");
   return {
+    ...actual,
     resolveTicket: vi.fn(async (ticket) => {
       const symbol = ticket.optionContractSymbol ?? ticket.symbol;
       const quote = {

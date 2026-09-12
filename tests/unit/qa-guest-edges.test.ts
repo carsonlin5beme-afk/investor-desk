@@ -11,9 +11,12 @@ vi.mock("next/headers", () => ({
 vi.mock("@/server/auth/access", () => ({
   currentProfile: vi.fn(async () => null),
 }));
-vi.mock("@/server/services/order-service", async () => {
+vi.mock("@/server/services/order-service", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/server/services/order-service")>();
   const { decideFill } = await import("@/server/domain/fill-engine");
   return {
+    ...actual,
     resolveTicket: vi.fn(async (ticket) => {
       const quote = {
         symbol: ticket.symbol,

@@ -163,6 +163,7 @@ export function Report({
             "Quote source",
             "Quote timestamp",
             "Price estimated",
+            "Valuation basis",
             "Quote stale",
             "Report as of",
           ],
@@ -179,6 +180,8 @@ export function Report({
             h.projection.quoteSource,
             h.projection.quoteAsOf,
             h.projection.priceEstimated,
+            h.projection.valuationBasis ??
+              (h.projection.priceEstimated ? "COST_BASIS" : "MARK"),
             h.projection.quoteStale,
             asOf,
           ]),
@@ -216,8 +219,13 @@ export function Report({
                 source: h.projection.quoteSource,
                 asOf: h.projection.quoteAsOf,
                 estimated: h.projection.priceEstimated,
+                valuationBasis:
+                  h.projection.valuationBasis ??
+                  (h.projection.priceEstimated ? "COST_BASIS" : "MARK"),
                 stale: h.projection.quoteStale,
                 impliedVolatilityEstimated: h.projection.ivEstimated,
+                expirationPolicy: h.projection.expirationPolicy,
+                expirationAssumed: h.projection.expirationAssumed,
               })),
               explanation:
                 "Hypothetical simultaneous targets, not historical returns or a probability forecast. Untargeted holdings retain current value. Includes all selected portfolio cash even when holdings are filtered.",
@@ -508,8 +516,14 @@ export function Report({
                             {h.projection.quoteSource}
                             {h.projection.priceEstimated
                               ? " · cost-basis estimate"
-                              : ""}
+                              : h.projection.valuationBasis ===
+                                  "OPTION_MIDPOINT"
+                                ? " · midpoint estimate"
+                                : ""}
                             {h.projection.quoteStale ? " · stale" : ""}
+                            {h.projection.expirationAssumed
+                              ? " · assumed expiry time"
+                              : ""}
                             {h.optionDetails && h.projection.ivEstimated
                               ? " · estimated IV"
                               : ""}

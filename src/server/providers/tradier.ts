@@ -1,5 +1,8 @@
 import { providerRequest } from "./request";
 import { OptionRight } from "@prisma/client";
+import { resolveOptionExpiry } from "@/lib/option-expiration";
+import { decodeContract } from "./demo";
+import { isStandardOptionContract } from "./option-contract";
 
 import { env } from "@/lib/env";
 import {
@@ -28,21 +31,33 @@ const timestamp = (bid: unknown, ask: unknown) => {
     ? date
     : new Date(0);
 };
-const parseContract = (raw: any): OptionContract => {
+const parseContract = (raw: any): OptionContract | null => {
+  if (
+    !raw ||
+    raw.type !== "option" ||
+    !["call", "put"].includes(raw.option_type) ||
+    Number(raw.contract_size) !== 100 ||
+    !raw.underlying ||
+    raw.root_symbol !== raw.underlying
+  )
+    return null;
   const right = raw.option_type === "put" ? OptionRight.PUT : OptionRight.CALL;
   const bid = price(raw.bid);
   const ask = price(raw.ask);
   return {
     contractSymbol: String(raw.symbol),
-    multiplier: Number(raw.contract_size ?? 100),
+    multiplier: Number(raw.contract_size),
     source: env.TRADIER_BASE_URL.includes("sandbox")
       ? "tradier-delayed"
       : "tradier",
     asOf: timestamp(raw.bid_date, raw.ask_date),
-    underlying: String(raw.root_symbol ?? raw.underlying ?? ""),
+    underlying: String(raw.underlying),
     right,
     strike: Number(raw.strike),
-    expiration: new Date(`${raw.expiration_date}T20:00:00.000Z`),
+    expiration: resolveOptionExpiry(
+      String(raw.expiration_date),
+      String(raw.underlying),
+    ).modelExpirationAt,
     bid,
     ask,
     last: price(raw.last),
@@ -79,16 +94,28 @@ export class TradierOptionsProvider implements OptionsDataProvider {
       return null;
     }
 
-    const payload = await this.get("/markets/quotes", {
-      symbols: contractSymbol,
-      greeks: "true",
-    });
-    const quote = payload?.quotes?.quote;
-    if (!quote) {
+    let underlying: string;
+    try {
+      underlying = decodeContract(contractSymbol).underlying;
+    } catch {
       return null;
     }
-
-    return parseContract(quote);
+    const payload = await this.get("/markets/quotes", {
+      symbols: `${contractSymbol},${underlying}`,
+      greeks: "true",
+    });
+    const rows = asArray<any>(payload?.quotes?.quote);
+    const base = rows.find((row) => row.symbol === underlying);
+    if (!base || !["stock", "etf"].includes(base.type)) return null;
+    const raw = rows.find((row) => row.symbol === contractSymbol);
+    try {
+      const contract = parseContract(raw);
+      return contract && isStandardOptionContract(contractSymbol, contract)
+        ? contract
+        : null;
+    } catch {
+      return null;
+    }
   }
 
   async getOptionChain(
@@ -99,13 +126,28 @@ export class TradierOptionsProvider implements OptionsDataProvider {
       return [];
     }
 
+    const classification = await this.get("/markets/quotes", {
+      symbols: underlying,
+    });
+    const base = asArray<any>(classification?.quotes?.quote).find(
+      (row) => row.symbol === underlying,
+    );
+    if (!base || !["stock", "etf"].includes(base.type)) return [];
     const payload = await this.get("/markets/options/chains", {
       symbol: underlying,
       expiration,
       greeks: "true",
     });
 
-    return asArray(payload?.options?.option).map(parseContract);
+    return asArray(payload?.options?.option)
+      .map((raw) => {
+        try {
+          return parseContract(raw);
+        } catch {
+          return null;
+        }
+      })
+      .filter((contract): contract is OptionContract => contract !== null);
   }
 
   async getExpirations(underlying: string): Promise<string[]> {

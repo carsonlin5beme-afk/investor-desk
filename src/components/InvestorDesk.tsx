@@ -1358,8 +1358,13 @@ export function InvestorDesk({ portfolioId }: { portfolioId?: string }) {
                   {detail.projection.quoteSource}
                   {detail.projection.priceEstimated
                     ? " · cost-basis estimate"
-                    : ""}
+                    : detail.projection.valuationBasis === "OPTION_MIDPOINT"
+                      ? " · midpoint estimate (not an execution price)"
+                      : ""}
                   {detail.projection.quoteStale ? " · stale" : ""}
+                  {detail.projection.expirationAssumed
+                    ? " · assumed expiration time"
+                    : ""}
                 </dd>
               </div>
               <div>
@@ -1397,6 +1402,7 @@ export function InvestorDesk({ portfolioId }: { portfolioId?: string }) {
             {detail.optionDetails &&
               detail.projection.underlyingPrice != null && (
                 <OptionsExplorer
+                  underlying={detail.optionDetails.underlying}
                   spot={detail.projection.underlyingPrice}
                   strike={Number(detail.optionDetails.strike)}
                   right={detail.optionDetails.right}

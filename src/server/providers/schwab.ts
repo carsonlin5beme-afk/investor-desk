@@ -1,4 +1,5 @@
 import { AssetClass, OptionRight } from "@prisma/client";
+import { resolveOptionExpiry } from "@/lib/option-expiration";
 import { finitePrice, midpoint } from "./alpaca-client";
 import { schwabGet } from "./schwab-client";
 import type {
@@ -32,12 +33,12 @@ export function canonicalSchwabOption(value: unknown) {
   const match = /^([A-Z][A-Z.]{0,5}) *(\d{6})([CP])(\d{8})$/.exec(value);
   if (!match) return null;
   const date = `20${match[2].slice(0, 2)}-${match[2].slice(2, 4)}-${match[2].slice(4, 6)}`;
-  const expiration = new Date(`${date}T20:00:00.000Z`);
-  if (
-    !Number.isFinite(expiration.getTime()) ||
-    expiration.toISOString().slice(0, 10) !== date
-  )
+  let expiration: Date;
+  try {
+    expiration = resolveOptionExpiry(date, match[1]).modelExpirationAt;
+  } catch {
     return null;
+  }
   const compact = match[1] + match[2] + match[3] + match[4];
   const padded = match[1].padEnd(6, " ") + match[2] + match[3] + match[4];
   if (value !== compact && value !== padded) return null;
@@ -208,15 +209,19 @@ export class SchwabOptionsProvider implements OptionsDataProvider {
               return null;
             return raw.expirationDate ?? raw.expiration;
           })
-          .filter(
-            (date): date is string =>
-              typeof date === "string" &&
-              /^\d{4}-\d{2}-\d{2}$/.test(date) &&
-              Number.isFinite(new Date(`${date}T20:00:00Z`).getTime()) &&
-              new Date(`${date}T20:00:00Z`).toISOString().slice(0, 10) ===
-                date &&
-              new Date(`${date}T20:00:00Z`).getTime() > Date.now(),
-          ),
+          .filter((date): date is string => {
+            if (typeof date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(date))
+              return false;
+            try {
+              const expiry = resolveOptionExpiry(date, underlying);
+              return (
+                expiry.scheduleStatus !== "CLOSED" &&
+                expiry.modelExpirationAt.getTime() > Date.now()
+              );
+            } catch {
+              return false;
+            }
+          }),
       ),
     ].sort();
   }

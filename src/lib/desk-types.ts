@@ -9,6 +9,7 @@ export type Projection = {
   optionModelProjectedValue: number | null;
   hasTarget: boolean;
   priceEstimated: boolean;
+  valuationBasis?: "COST_BASIS" | "OPTION_MIDPOINT" | "MARK";
   quoteStale: boolean;
   quoteAsOf: string | null;
   quoteSource: string;
@@ -16,6 +17,8 @@ export type Projection = {
   ivEstimated: boolean;
   underlyingPrice: number | null;
   expired: boolean;
+  expirationAssumed?: boolean;
+  expirationPolicy?: string | null;
 };
 export type Holding = {
   id: string;

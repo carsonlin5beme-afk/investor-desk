@@ -1,4 +1,5 @@
 import { OptionRight } from "@prisma/client";
+import { resolveOptionExpiry } from "@/lib/option-expiration";
 import {
   alpacaConfigured,
   alpacaGet,
@@ -43,7 +44,10 @@ export function parseAlpacaOption(
     underlying: meta.underlying_symbol,
     right: meta.type === "put" ? OptionRight.PUT : OptionRight.CALL,
     strike: Number(meta.strike_price),
-    expiration: new Date(`${meta.expiration_date}T20:00:00.000Z`),
+    expiration: resolveOptionExpiry(
+      meta.expiration_date,
+      meta.underlying_symbol,
+    ).modelExpirationAt,
     multiplier: Number(meta.size),
     bid,
     ask,

@@ -11,10 +11,12 @@ import {
 } from "@/lib/desk-types";
 import {
   quoteStatus,
+  optionDeliverableUnverified,
   type QuoteStatus,
   type ClosedSessionBasis,
 } from "@/lib/quote-status";
 import { OrderSuccessAudio } from "@/lib/order-success-audio";
+import { assertOptionNotExpired } from "@/lib/option-expiration";
 import { DeskModal } from "./DeskModal";
 import { OptionsExplorer } from "./studio/OptionsExplorer";
 type Quote = {
@@ -94,12 +96,19 @@ export function OrderTicket({
   const [availability, setAvailability] = useState<QuoteStatus | null>(null);
   const [optionsAvailability, setOptionsAvailability] =
     useState<QuoteStatus | null>(null);
+  const [contractAvailability, setContractAvailability] =
+    useState<QuoteStatus | null>(null);
+  const [contractLoading, setContractLoading] = useState(false);
   const [quoteLoading, setQuoteLoading] = useState(true);
   const [quote, setQuote] = useState<Quote | null>(null),
     [quantity, setQuantity] = useState(holding ? String(holding.quantity) : ""),
     [orderType, setOrderType] = useState("MARKET"),
     [limit, setLimit] = useState("");
-  const [expirations, setExpirations] = useState<string[]>([]),
+  const [expirations, setExpirations] = useState<string[]>(
+      holding?.optionDetails
+        ? [holding.optionDetails.expiration.slice(0, 10)]
+        : [],
+    ),
     [expiration, setExpiration] = useState(
       holding?.optionDetails?.expiration.slice(0, 10) ?? "",
     ),
@@ -155,6 +164,12 @@ export function OrderTicket({
   const prefill = useRef("");
   const [retryPending, setRetryPending] = useState(false);
   const [quoteRefresh, setQuoteRefresh] = useState(0);
+  const selectedContractSymbol =
+    asset === "OPTION" ? contract?.contractSymbol : undefined;
+  const heldExpiration =
+    holding?.optionDetails?.underlying === symbol
+      ? holding.optionDetails.expiration.slice(0, 10)
+      : null;
   useEffect(() => {
     try {
       mutedRef.current =
@@ -299,7 +314,7 @@ export function OrderTicket({
   useEffect(() => {
     if (asset !== "OPTION" || !symbol) return;
     const c = new AbortController();
-    setExpirations([]);
+    setExpirations(heldExpiration ? [heldExpiration] : []);
     setOptionsAvailability(null);
     setChain([]);
     setContract((old) => (old?.underlying === symbol ? old : null));
@@ -312,15 +327,21 @@ export function OrderTicket({
       .then((d) => {
         if (c.signal.aborted) return;
         setOptionsAvailability(d.availability ?? null);
-        setExpirations(d.expirations);
+        // Discovery can omit an existing position. It cannot change what is held.
+        const available = [
+          ...new Set([
+            ...d.expirations,
+            ...(heldExpiration ? [heldExpiration] : []),
+          ]),
+        ].sort();
+        setExpirations(available);
         setExpiration((old) =>
-          d.expirations.includes(old) ? old : (d.expirations[0] ?? ""),
+          available.includes(old) ? old : (available[0] ?? ""),
         );
       })
       .catch((error: unknown) => {
         if (!c.signal.aborted) {
           const message = requestErrorMessage(error);
-          setError(message);
           setOptionsAvailability({
             code: "REFRESH_FAILED",
             label: "Options refresh failed",
@@ -331,7 +352,7 @@ export function OrderTicket({
         }
       });
     return () => c.abort();
-  }, [symbol, asset, quoteRefresh]);
+  }, [symbol, asset, quoteRefresh, heldExpiration]);
   useEffect(() => {
     if (asset !== "OPTION" || !expiration) return;
     const c = new AbortController();
@@ -351,17 +372,12 @@ export function OrderTicket({
           if (c.signal.aborted) return;
           setOptionsAvailability(d.availability ?? null);
           setChain(d.contracts);
-          setContract(
-            (old) =>
-              d.contracts.find(
-                (c) => c.contractSymbol === old?.contractSymbol,
-              ) ?? null,
-          );
+          // A selected contract has its own quote lifecycle below. An empty or
+          // rolling discovery list must never erase it or replace its terms.
         })
         .catch((error: unknown) => {
           if (!c.signal.aborted) {
             const message = requestErrorMessage(error);
-            setError(message);
             setOptionsAvailability({
               code: "REFRESH_FAILED",
               label: "Options refresh failed",
@@ -383,6 +399,60 @@ export function OrderTicket({
       c.abort();
     };
   }, [asset, symbol, expiration, right, quoteRefresh]);
+  useEffect(() => {
+    setContractAvailability(null);
+    setContractLoading(Boolean(selectedContractSymbol));
+    if (!selectedContractSymbol) return;
+    const c = new AbortController();
+    let inFlight = false;
+    const run = async () => {
+      if (c.signal.aborted || inFlight) return;
+      inFlight = true;
+      try {
+        const data = await api<{
+          quote: Quote | null;
+          availability: QuoteStatus;
+        }>(
+          `/api/quotes/snapshot?symbol=${encodeURIComponent(selectedContractSymbol)}&assetClass=OPTION`,
+          "GET",
+          undefined,
+          c.signal,
+        );
+        if (c.signal.aborted) return;
+        setContractAvailability(data.availability);
+        setContract((old) =>
+          old?.contractSymbol === selectedContractSymbol
+            ? {
+                ...old,
+                bid: data.quote?.bid ?? null,
+                ask: data.quote?.ask ?? null,
+                mark: data.quote?.mark ?? null,
+                source: data.quote?.source,
+                asOf: data.quote?.asOf ?? null,
+              }
+            : old,
+        );
+      } catch (error: unknown) {
+        if (c.signal.aborted) return;
+        setContractAvailability({
+          code: "REFRESH_FAILED",
+          label: "Selected contract quote unavailable",
+          message: requestErrorMessage(error),
+          blocking: true,
+          connectionRequired: true,
+        });
+      } finally {
+        inFlight = false;
+        if (!c.signal.aborted) setContractLoading(false);
+      }
+    };
+    void run();
+    const timer = setInterval(() => void run(), 15000);
+    return () => {
+      c.abort();
+      clearInterval(timer);
+    };
+  }, [selectedContractSymbol, quoteRefresh]);
   function chooseSymbol(s: string) {
     setSymbol(s);
     setQuery(s);
@@ -424,16 +494,16 @@ export function OrderTicket({
   }, [asset, symbol, side, closed, closedValid, quote, retryPending]);
   const activeStatus =
     asset === "OPTION"
-      ? (optionsAvailability ??
-        (contract
-          ? quoteStatus({
-              symbol: contract.contractSymbol,
-              source: contract.source ?? (mode === "demo" ? "demo" : "unknown"),
-              asOf: contract.asOf,
-              hasQuote: true,
-              now,
-            })
-          : null))
+      ? contract
+        ? (contractAvailability ??
+          quoteStatus({
+            symbol: contract.contractSymbol,
+            source: contract.source ?? (mode === "demo" ? "demo" : "unknown"),
+            asOf: contract.asOf,
+            hasQuote: true,
+            now,
+          }))
+        : optionsAvailability
       : closed
         ? closedValid
           ? availability
@@ -456,28 +526,42 @@ export function OrderTicket({
               })
             : availability;
   const validPrice = price != null && Number.isFinite(price) && price > 0;
+  let expiryBlocker = "";
+  if (asset === "OPTION" && contract) {
+    try {
+      assertOptionNotExpired(contract.expiration, contract.underlying, now);
+    } catch (error: unknown) {
+      expiryBlocker = requestErrorMessage(error);
+    }
+  }
   const previewBlocker = !symbol
     ? "Choose a symbol to begin."
-    : query !== symbol
-      ? "Select a ticker or press Enter to confirm it."
-      : activeStatus?.blocking
-        ? activeStatus.message
-        : closed && orderType !== "LIMIT"
-          ? "Use a limit order with this closed-session quote."
-          : orderType === "LIMIT" &&
-              (!Number.isFinite(Number(limit)) || Number(limit) <= 0)
-            ? "Enter a positive limit price."
-            : asset === "OPTION" && !contract
-              ? "Choose an expiration and select an option contract."
-              : !validPrice
-                ? quoteLoading
-                  ? "Loading a quote..."
-                  : "A positive bid/ask quote is required before previewing an order."
-                : !Number.isFinite(Number(quantity)) || Number(quantity) <= 0
-                  ? "Enter the number of shares or contracts to trade."
-                  : asset === "OPTION" && !Number.isInteger(Number(quantity))
-                    ? "Options require a whole number of contracts."
-                    : "";
+    : expiryBlocker
+      ? expiryBlocker
+      : asset === "OPTION" && contractLoading
+        ? "Loading the selected contract quote..."
+        : query !== symbol
+          ? "Select a ticker or press Enter to confirm it."
+          : activeStatus?.blocking
+            ? activeStatus.message
+            : closed && orderType !== "LIMIT"
+              ? "Use a limit order with this closed-session quote."
+              : orderType === "LIMIT" &&
+                  (!Number.isFinite(Number(limit)) || Number(limit) <= 0)
+                ? "Enter a positive limit price."
+                : asset === "OPTION" && !contract
+                  ? "Choose an expiration and select an option contract."
+                  : !validPrice
+                    ? quoteLoading
+                      ? "Loading a quote..."
+                      : "A positive bid/ask quote is required before previewing an order."
+                    : !Number.isFinite(Number(quantity)) ||
+                        Number(quantity) <= 0
+                      ? "Enter the number of shares or contracts to trade."
+                      : asset === "OPTION" &&
+                          !Number.isInteger(Number(quantity))
+                        ? "Options require a whole number of contracts."
+                        : "";
   async function review(e: React.FormEvent) {
     e.preventDefault();
     if (submitting.current || retryPending) return;
@@ -1042,6 +1126,13 @@ export function OrderTicket({
                               >
                                 <td>
                                   {money(c.strike)}
+                                  {optionDeliverableUnverified(
+                                    c.source ?? "",
+                                  ) ? (
+                                    <small>
+                                      Standard deliverable unverified
+                                    </small>
+                                  ) : null}
                                   {quote?.mark &&
                                   Math.abs(c.strike - quote.mark) ===
                                     Math.min(
@@ -1103,9 +1194,13 @@ export function OrderTicket({
                         <p className="chain-empty">
                           {loading
                             ? "Loading option chain..."
-                            : mode === "demo"
-                              ? "Choose a sample symbol and expiration to view contracts."
-                              : "No contracts returned. Check the selected provider credentials, expiration, and market-data access."}
+                            : optionsAvailability?.blocking
+                              ? optionsAvailability.message
+                              : contract
+                                ? "No other contracts returned for this expiration. Your selected contract is kept."
+                                : mode === "demo"
+                                  ? "Choose a sample symbol and expiration to view contracts."
+                                  : "No contracts returned. Check the selected provider credentials, expiration, and market-data access."}
                         </p>
                       )}
                     </div>
@@ -1121,6 +1216,11 @@ export function OrderTicket({
                         ? "Sample option prices"
                         : `${contract.source ?? "Unknown source"} / ${contract.asOf ? new Date(contract.asOf).toLocaleString() : "Timestamp unavailable"}`}
                     </small>
+                    {optionDeliverableUnverified(contract.source ?? "") ? (
+                      <small>
+                        Standard deliverable unverified · prices only
+                      </small>
+                    ) : null}
                   </div>
                 )}
               </>
@@ -1276,6 +1376,7 @@ export function OrderTicket({
                   <summary>Explore payoff & sensitivity</summary>
                   {showPayoff && (
                     <OptionsExplorer
+                      underlying={contract.underlying}
                       key={contract.contractSymbol}
                       spot={quote.mark}
                       strike={contract.strike}

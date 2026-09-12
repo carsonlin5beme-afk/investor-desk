@@ -4,8 +4,18 @@ import { finitePrice, quoteTime } from "@/server/providers/alpaca-client";
 import { MarketQuote } from "@/server/domain/types";
 import { providers, quoteSourceFor } from "@/server/providers/factory";
 import { acceptsQuoteSource } from "@/server/providers/quote-sources";
+import { isStandardOptionContract } from "@/server/providers/option-contract";
 export type LiveQuoteResult = MarketQuote;
 export type QuoteResult = { quote: MarketQuote | null; refreshFailed: boolean };
+
+// Option valuation uses the current two-sided book only. A zero bid can still
+// bound a midpoint estimate, but neither the midpoint nor a historical trade
+// is an executable sell price. Missing/crossed books fall back to cost basis.
+export function optionMidpoint(bid: unknown, ask: unknown): number | null {
+  const b = finitePrice(bid),
+    a = finitePrice(ask);
+  return b !== null && a !== null && a > 0 && b <= a ? (b + a) / 2 : null;
+}
 
 const scope = globalThis as typeof globalThis & {
   quoteResultRequests?: Map<string, Promise<QuoteResult>>;
@@ -31,7 +41,10 @@ export const getQuoteResult = async (
           bid: row.bid?.toNumber() ?? null,
           ask: row.ask?.toNumber() ?? null,
           last: row.last?.toNumber() ?? null,
-          mark: row.mark?.toNumber() ?? null,
+          mark:
+            assetClass === "OPTION"
+              ? optionMidpoint(row.bid?.toNumber(), row.ask?.toNumber())
+              : (row.mark?.toNumber() ?? null),
           source: row.source,
           asOf: row.asOf,
           impliedVolatility: row.impliedVolatility,
@@ -45,6 +58,11 @@ export const getQuoteResult = async (
           ? await providers.equities.getQuote(symbol, { forceRefresh: force })
           : await providers.options.getOptionQuote(symbol);
       if (!raw) return { quote: force ? null : cached, refreshFailed: true };
+      if (
+        assetClass === "OPTION" &&
+        (!("contractSymbol" in raw) || !isStandardOptionContract(symbol, raw))
+      )
+        throw new Error("Unexpected or nonstandard option contract");
       if (
         assetClass === "EQUITY" &&
         (!("symbol" in raw) ||
@@ -61,9 +79,11 @@ export const getQuoteResult = async (
         ask: finitePrice(raw.ask),
         last: finitePrice(raw.last),
         mark:
-          raw.bid != null && raw.ask != null && raw.bid > raw.ask
-            ? null
-            : finitePrice(raw.mark),
+          assetClass === "OPTION"
+            ? optionMidpoint(raw.bid, raw.ask)
+            : raw.bid != null && raw.ask != null && raw.bid > raw.ask
+              ? null
+              : finitePrice(raw.mark),
         source: raw.source ?? expectedSource,
         asOf:
           raw.asOf && Number.isFinite(raw.asOf.getTime())
@@ -95,6 +115,9 @@ export const getQuoteResult = async (
 };
 export const quoteMark = (quote: MarketQuote | null) => {
   if (!quote) return null;
+  // Apply this on cache reads too: older cached marks may have used a trade.
+  if (quote.assetClass === "OPTION")
+    return optionMidpoint(quote.bid, quote.ask);
   const trade = finitePrice(quote.last);
   if (quote.bid != null && quote.ask != null && quote.bid > quote.ask)
     return trade;

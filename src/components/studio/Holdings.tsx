@@ -174,7 +174,11 @@ export function Holdings({
                             : p.quoteStale
                               ? "Stale quote"
                               : p.quoteSource}
+                        {p.valuationBasis === "OPTION_MIDPOINT"
+                          ? " · midpoint estimate"
+                          : ""}
                         {p.expired ? " · expired" : ""}
+                        {p.expirationAssumed ? " · assumed expiry time" : ""}
                       </small>
                     </span>
                   </button>

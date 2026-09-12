@@ -6,9 +6,11 @@ import {
   orderTicketSchema,
   targetScenarioSchema,
 } from "@/server/api/schemas";
-import { resolveTicket } from "@/server/services/order-service";
 import {
-  assertClosedSessionCurrent,
+  resolveTicket,
+  assertExecutionCurrent,
+} from "@/server/services/order-service";
+import {
   auditQuoteMetadata,
   executionAuditNote,
 } from "@/server/services/closed-session-simulation";
@@ -252,7 +254,7 @@ export async function guestOrder(
       },
     };
   guestLimit(state);
-  assertClosedSessionCurrent(closedSession);
+  assertExecutionCurrent(ticket, quote, closedSession);
   const now = new Date(),
     quantity = (existing?.quantity ?? new D(0)).plus(
       ticket.side === "BUY" ? ticket.quantity : -ticket.quantity,

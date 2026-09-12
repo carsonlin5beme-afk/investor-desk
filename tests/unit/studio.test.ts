@@ -45,7 +45,7 @@ const call: ScenarioAsset = {
   target: 120,
   option: {
     strike: 100,
-    expiration: "2027-01-01T00:00:00.000Z",
+    expiration: "2027-01-15T21:00:00.000Z",
     right: "CALL",
     iv: 0.3,
     multiplier: 100,
@@ -60,13 +60,13 @@ const put: ScenarioAsset = {
 const holding: Holding = {
   id: call.id,
   portfolioId: call.portfolioId,
-  symbol: "ABC270101C00100000",
+  symbol: "ABC270115C00100000",
   assetClass: "OPTION",
   quantity: call.quantity,
   avgCost: 7,
   optionDetails: {
     underlying: call.symbol,
-    optionSymbol: "ABC270101C00100000",
+    optionSymbol: "ABC270115C00100000",
     right: "CALL",
     strike: "100",
     expiration: call.option!.expiration,
@@ -130,6 +130,27 @@ const note = {
 afterEach(() => vi.useRealTimers());
 
 describe("scenario valuation", () => {
+  it.each([call, put])(
+    "normalizes legacy winter UTC hours consistently with the server for $id",
+    (asset) => {
+      const legacy = {
+        ...asset,
+        option: { ...asset.option!, expiration: "2027-01-15T20:00:00.000Z" },
+      };
+      const now = Date.parse("2027-01-15T20:30:00Z");
+      const expected = projectOptionModelValue({
+        right: legacy.option.right,
+        strike: legacy.option.strike,
+        contracts: legacy.quantity,
+        multiplier: legacy.option.multiplier,
+        targetUnderlyingPrice: legacy.target,
+        impliedVolatility: legacy.option.iv,
+        expiration: new Date("2027-01-15T21:00:00Z"),
+        now: new Date(now),
+      });
+      expect(valueAt(legacy, 1, "model", undefined, now)).toBe(expected);
+    },
+  );
   it("retains current marks at zero progress and rounds equity targets like the server", () => {
     expect(valueAt(equity, -1, "model", undefined, at)).toBe(312.5);
     expect(valueAt(equity, 0.5, "model", undefined, at)).toBe(349.15);
@@ -225,7 +246,7 @@ describe("scenario valuation", () => {
           asset,
           1,
           "model",
-          { ...defaultAssumptions, daysForward: 366 },
+          { ...defaultAssumptions, daysForward: 400 },
           at,
         ),
       ).toBe(6000);
@@ -238,7 +259,14 @@ describe("scenario valuation", () => {
   it("handles zero targets with the same option convention as the projection service", () => {
     expect(valueAt({ ...call, target: 0 }, 1, "model", undefined, at)).toBe(0);
     expect(valueAt({ ...put, target: 0 }, 1, "model", undefined, at)).toBe(
-      30000,
+      Math.round(
+        30000 *
+          Math.exp(
+            (-0.04 * (Date.parse(put.option!.expiration) - at)) /
+              (365 * 86400000),
+          ) *
+          100,
+      ) / 100,
     );
   });
 
@@ -283,7 +311,7 @@ describe("scenario snapshots", () => {
     const asset = assetFromHolding(holding);
     expect(asset).toMatchObject({
       ...call,
-      label: "ABC $100 call · 2027-01-01",
+      label: "ABC $100 call · 2027-01-15",
     });
     const untargeted = assetFromHolding({
       ...holding,

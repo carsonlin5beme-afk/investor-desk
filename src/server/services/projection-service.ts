@@ -1,6 +1,7 @@
 import { isQuoteStale } from "@/server/domain/staleness";
 import { Prisma, TargetMode } from "@prisma/client";
 import { env } from "@/lib/env";
+import { optionHasExpired, resolveOptionExpiry } from "@/lib/option-expiration";
 import {
   deriveTargetPriceFromScenario,
   projectEquityValue,
@@ -30,6 +31,9 @@ export async function buildPositionProjection(position: PositionWithRelations) {
     useManualShares: s?.useManualShares,
   });
   const option = position.optionDetails;
+  const expiry = option
+    ? resolveOptionExpiry(option.expiration, option.underlying)
+    : null;
   const iv = quote?.impliedVolatility;
   const modelIV = iv != null && iv > 0 ? iv : 0.6;
   const intrinsic = option
@@ -49,7 +53,7 @@ export async function buildPositionProjection(position: PositionWithRelations) {
         multiplier,
         targetUnderlyingPrice,
         impliedVolatility: modelIV,
-        expiration: option.expiration,
+        expiration: expiry!.modelExpirationAt,
       })
     : null;
   const targetValue = option
@@ -74,13 +78,21 @@ export async function buildPositionProjection(position: PositionWithRelations) {
     optionModelProjectedValue: model,
     hasTarget: targetUnderlyingPrice !== null,
     priceEstimated: mark === null,
+    valuationBasis:
+      mark === null
+        ? ("COST_BASIS" as const)
+        : option
+          ? ("OPTION_MIDPOINT" as const)
+          : ("MARK" as const),
     quoteStale: !quote || isQuoteStale(quote.asOf, env.QUOTE_STALE_SECONDS),
-    quoteAsOf: quote?.asOf.toISOString() ?? null,
+    quoteAsOf: mark === null ? null : (quote?.asOf.toISOString() ?? null),
     quoteSource: quote?.source ?? "unavailable",
     impliedVolatility: option ? modelIV : null,
     ivEstimated: Boolean(option && !(iv != null && iv > 0)),
     underlyingPrice: quoteMark(underlyingQuote),
-    expired: Boolean(option && option.expiration.getTime() <= Date.now()),
+    expired: Boolean(expiry && optionHasExpired(expiry)),
+    expirationAssumed: Boolean(expiry && expiry.scheduleStatus !== "KNOWN"),
+    expirationPolicy: expiry?.policyVersion ?? null,
   };
 }
 export type PositionProjection = Awaited<
