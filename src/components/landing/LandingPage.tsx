@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { AmbientRadioControls } from "@/components/AmbientRadio";
 import {
-  ArrowRight,
+  ArrowDown,
   ArrowUpRight,
   BarChart3,
   Check,
@@ -14,6 +14,8 @@ import {
 import { LandingNavigation } from "./LandingNavigation";
 import { ScenarioPreview } from "./ScenarioPreview";
 import styles from "./landing.module.css";
+import hero from "./orbit-hero.module.css";
+import { OrbitArtwork } from "./OrbitArtwork";
 const questions = [
   {
     question: "Is this a brokerage account?",
@@ -38,7 +40,7 @@ const questions = [
 ];
 export function LandingPage() {
   return (
-    <div className={styles.page}>
+    <div className={styles.page} data-landing-page>
       <a href="#main" className={styles.skipLink}>
         Skip to content
       </a>
@@ -59,47 +61,54 @@ export function LandingPage() {
         <AmbientRadioControls />
       </header>
       <main id="main">
-        <section className={styles.hero} aria-labelledby="hero-heading">
-          <div className={styles.heroCopy}>
-            <div className={styles.eyebrow}>
-              <span className={styles.eyebrowLine} /> A WORKSPACE FOR YOUR
-              WHAT-IFS
-            </div>
-            <h1 id="hero-heading">
-              Your conviction.
-              <br />A clearer <em>picture.</em>
+        <section
+          className={hero.hero}
+          data-orbit-hero
+          aria-labelledby="hero-heading"
+        >
+          <div className={hero.copy}>
+            <p className={hero.eyebrow}>YOUR CONVICTION. A CLEARER PICTURE.</p>
+            <h1 id="hero-heading" className={hero.title}>
+              <span>Investor</span> Desk
             </h1>
-            <p className={styles.heroDescription}>
-              Build a portfolio. Set your targets. See what it could become.
+            <p className={hero.description}>
+              Build a portfolio. Explore what it could become.
             </p>
-            <p className={styles.heroDetail}>
-              Bring your stocks, ETFs, and options into one simulated workspace.
-              Turn the way you see a company into a picture of your entire
-              portfolio.
-            </p>
-            <div className={styles.heroActions}>
-              <Link href="/dashboard" className={styles.primaryCta}>
+            <div className={hero.actions}>
+              <Link href="/dashboard" className={hero.primary}>
                 Open your workspace{" "}
-                <ArrowUpRight size={18} aria-hidden="true" />
+                <ArrowUpRight size={17} aria-hidden="true" />
               </Link>
-              <a href="#how-it-works" className={styles.textCta}>
-                Take a closer look <ArrowRight size={16} aria-hidden="true" />
+              <a href="#explore-example" className={hero.secondary}>
+                Explore the example <ArrowDown size={15} aria-hidden="true" />
               </a>
             </div>
-            <div className={styles.heroAssurances}>
-              <span>
-                <Check size={13} aria-hidden="true" /> No real-money trades
-              </span>
-              <span>
-                <Check size={13} aria-hidden="true" /> Your assumptions, made
-                visible
-              </span>
-            </div>
-            <div className={styles.heroFootnote}>
-              <span>THINK BEYOND THE TICKER.</span>
-              <div className={styles.miniRule} />
-              <span>SEE THE WHOLE PICTURE.</span>
-            </div>
+            <p className={hero.assurance}>
+              Simulated portfolios. Your assumptions, made visible. No
+              real-money trades.
+            </p>
+          </div>
+          <OrbitArtwork />
+        </section>
+        <section
+          id="explore-example"
+          className={styles.exploreExample}
+          aria-labelledby="example-heading"
+        >
+          <div>
+            <p className={styles.eyebrow}>YOUR THESIS, IN NUMBERS</p>
+            <h2 id="example-heading">
+              A little perspective.
+              <br />
+              <em>A bigger picture.</em>
+            </h2>
+            <p>
+              Move a target. See how one idea changes the whole portfolio.
+              Explore stocks and options with this interactive example.
+            </p>
+            <p className={styles.exampleNote}>
+              Illustrative prices. Your saved portfolios stay in your workspace.
+            </p>
           </div>
           <ScenarioPreview />
         </section>

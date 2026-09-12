@@ -125,23 +125,36 @@
   animation: orbit-float 5s ease-in-out infinite;
   animation-play-state: paused;
 }
-.orbitRings {
+.orbitDisc {
   position: absolute;
   inset: 0;
-  animation: orbit-turn 18s linear infinite;
+  width: 100%;
+  height: 100%;
+  fill: none;
+  overflow: visible;
+}
+.orbitTrack {
+  stroke: color-mix(in srgb, var(--green) 38%, transparent);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.orbitFlow {
+  stroke: var(--green);
+  stroke-width: 1.2;
+  stroke-linecap: round;
+  stroke-dasharray: 22 78;
+  stroke-dashoffset: var(--orbit-phase);
+  vector-effect: non-scaling-stroke;
+  animation: orbit-flow 12s linear infinite;
   animation-play-state: paused;
 }
-.orbitRing,
-.orbitRingTilted {
-  position: absolute;
-  inset: 0;
-  border: 1px solid color-mix(in srgb, var(--green) 40%, transparent);
-  border-radius: 50%;
+.orbitOuter {
+  --orbit-phase: -12px;
 }
-.orbitRingTilted {
-  inset: 18% -5%;
-  border-color: color-mix(in srgb, var(--green) 65%, transparent);
-  transform: rotate(-35deg);
+.orbitInner {
+  stroke-dasharray: 18 82;
+  --orbit-phase: -58px;
+  animation-duration: 8s;
 }
 .orbitDot {
   position: absolute;
@@ -167,13 +180,13 @@
 .orbit[data-playing="true"] .orbitBody {
   animation: none;
 }
-.orbit[data-playing="true"][data-motion-visible="true"] .orbitRings,
+.orbit[data-playing="true"][data-motion-visible="true"] .orbitFlow,
 .orbit[data-playing="false"][data-motion-visible="true"] .orbitBody {
   animation-play-state: running;
 }
-@keyframes orbit-turn {
+@keyframes orbit-flow {
   to {
-    transform: rotate(360deg);
+    stroke-dashoffset: calc(var(--orbit-phase) - 100px);
   }
 }
 @keyframes orbit-float {
@@ -237,7 +250,7 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .orbitBody,
-  .orbitRings {
+  .orbitFlow {
     animation: none !important;
     transform: none !important;
   }

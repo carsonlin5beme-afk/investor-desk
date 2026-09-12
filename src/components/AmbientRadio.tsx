@@ -78,6 +78,9 @@ export function AmbientRadio({ children }: { children: ReactNode }) {
     return () => document.removeEventListener("visibilitychange", visibility);
   }, []);
   useEffect(() => {
+    // Fast Refresh retains React state/refs while rerunning effect cleanup.
+    // A disposed engine must not leave a stuck Playing label or auto-resume.
+    if (!engine.current && stateRef.current !== "idle") updateState("paused");
     try {
       const stored = localStorage.getItem("investor-desk:ambient-volume:v1");
       const value = stored === null ? NaN : Number(stored);
@@ -121,10 +124,40 @@ function RadioOrbit() {
       data-motion-visible={radio?.motionVisible ?? false}
     >
       <span className={styles.orbitBody}>
-        <span className={styles.orbitRings}>
-          <span className={styles.orbitRing} />
-          <span className={styles.orbitRingTilted} />
-        </span>
+        <svg className={styles.orbitDisc} viewBox="0 0 64 64" focusable="false">
+          <g transform="rotate(-35 32 32)">
+            <ellipse
+              className={styles.orbitTrack}
+              cx="32"
+              cy="32"
+              rx="29"
+              ry="17"
+            />
+            <ellipse
+              className={styles.orbitTrack}
+              cx="32"
+              cy="32"
+              rx="21"
+              ry="12.3"
+            />
+            <ellipse
+              className={`${styles.orbitFlow} ${styles.orbitOuter}`}
+              cx="32"
+              cy="32"
+              rx="29"
+              ry="17"
+              pathLength="100"
+            />
+            <ellipse
+              className={`${styles.orbitFlow} ${styles.orbitInner}`}
+              cx="32"
+              cy="32"
+              rx="21"
+              ry="12.3"
+              pathLength="100"
+            />
+          </g>
+        </svg>
         <span className={styles.orbitDot} />
       </span>
     </span>

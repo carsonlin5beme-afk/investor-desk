@@ -59,6 +59,14 @@ export function createAmbientGraph(context: BaseAudioContext) {
   wet.gain.value = 0.52;
   bus.connect(reverb).connect(wet).connect(master);
 
+  // One slow stereo journey shared by the bed, independent of the sparse stars.
+  const travel = keep(context.createOscillator());
+  travel.frequency.value = 0.008;
+  const travelDepth = keep(context.createGain());
+  travelDepth.gain.value = 0.16;
+  travel.connect(travelDepth);
+  start(travel);
+
   const frequencies = [73.416, 110, 146.832, 164.814, 220, 246.942, 329.628];
   frequencies.forEach((frequency, index) => {
     const tone = keep(context.createOscillator());
@@ -66,14 +74,15 @@ export function createAmbientGraph(context: BaseAudioContext) {
     tone.frequency.value = frequency;
     tone.detune.value = [-3, 2, 4, -2, 3, -4, 1][index];
     const level = keep(context.createGain());
-    level.gain.value = index < 3 ? 0.07 : 0.035;
+    level.gain.value = index < 3 ? 0.032 : 0.026;
     const drift = keep(context.createOscillator());
     drift.frequency.value = 0.013 + index * 0.0043;
     const depth = keep(context.createGain());
-    depth.gain.value = index < 3 ? 0.024 : 0.016;
+    depth.gain.value = index < 3 ? 0.009 : 0.012;
     drift.connect(depth).connect(level.gain);
     const pan = keep(context.createStereoPanner());
-    pan.pan.value = (index % 2 ? 1 : -1) * (0.16 + index * 0.065);
+    pan.pan.value = (index % 2 ? 1 : -1) * (0.12 + index * 0.03);
+    travelDepth.connect(pan.pan);
     tone.connect(level).connect(pan).connect(bus);
     start(tone);
     start(drift);
@@ -110,6 +119,46 @@ export function createAmbientGraph(context: BaseAudioContext) {
   air.connect(airFilter).connect(airLevel).connect(bus);
   start(air);
 
+  // Authored muted mallets: eight passing stars, with no recurring note timers
+  // or accumulating voices. 64 s at 24 kHz stereo is a fixed 11.72 MiB buffer.
+  const stars = keep(context.createBufferSource());
+  const starRate = 24000;
+  const starBuffer = context.createBuffer(2, 64 * starRate, starRate);
+  const left = starBuffer.getChannelData(0);
+  const right = starBuffer.getChannelData(1);
+  const onsets = [2.4, 8.9, 17.2, 23, 33.8, 41.1, 49.9, 57];
+  const notes = [293.665, 440, 329.628, 493.883, 293.665, 587.33, 440, 329.628];
+  onsets.forEach((onset, index) => {
+    const length = Math.round(1.6 * starRate);
+    const offset = Math.round(onset * starRate);
+    for (let i = 0; i < length; i++) {
+      const time = i / starRate;
+      const attack = 0.5 - 0.5 * Math.cos(Math.PI * Math.min(1, time / 0.02));
+      const tail = Math.min(1, (length - 1 - i) / (starRate * 0.2));
+      const taper = 0.5 - 0.5 * Math.cos(Math.PI * tail);
+      const phase = 2 * Math.PI * notes[index] * time;
+      const sample =
+        0.055 *
+        attack *
+        taper *
+        (Math.sin(phase) * Math.exp(-time / 0.42) +
+          0.09 * Math.sin(phase * 2.76) * Math.exp(-time / 0.11));
+      const progress = i / (length - 1);
+      const pan = index % 2 ? 0.4 - 0.9 * progress : -0.5 + 0.9 * progress;
+      const angle = ((pan + 1) * Math.PI) / 4;
+      left[offset + i] = sample * Math.cos(angle);
+      right[offset + i] = sample * Math.sin(angle);
+    }
+  });
+  stars.buffer = starBuffer;
+  stars.loop = true;
+  const starFilter = keep(context.createBiquadFilter());
+  starFilter.type = "lowpass";
+  starFilter.frequency.value = 1900;
+  starFilter.Q.value = 0.5;
+  stars.connect(starFilter).connect(bus);
+  start(stars);
+
   let disposed = false;
   return {
     fadeVolume(value: number, seconds = 0.12) {
@@ -135,6 +184,7 @@ export function createAmbientGraph(context: BaseAudioContext) {
       }
       for (const node of nodes) node.disconnect();
       air.buffer = null;
+      stars.buffer = null;
       reverb.buffer = null;
     },
   };
