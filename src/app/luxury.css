@@ -27,28 +27,28 @@
   color-scheme: light;
 }
 :root[data-theme="dark"] {
-  --paper: #070c10;
-  --surface: #0d151a;
-  --surface-soft: #142128;
-  --ink: #dce7eb;
-  --muted: #96aab2;
-  --green: #8fcbb1;
-  --green-dark: #315749;
-  --line: #283940;
-  --field-border: #5c7c7c;
-  --focus: #aef4d0;
-  --action-ink: #def2e9;
+  --paper: #05080e;
+  --surface: #0b111b;
+  --surface-soft: #111b27;
+  --ink: #d7e0e9;
+  --muted: #95a5b5;
+  --green: #91afa2;
+  --green-dark: #20392f;
+  --line: #263442;
+  --field-border: #526977;
+  --focus: #bedfd0;
+  --action-ink: #dfece6;
   --accent-glow: none;
-  --number-core: #aef4d0;
-  --number-soft: #abd4c4;
-  --number-glow: 0 0 9px #7fffc055, 0 0 24px #6df7bf33, 0 0 44px #62eeba14;
-  --number-glow-small: 0 0 12px #7fffc038;
+  --number-core: #b4e7cd;
+  --number-soft: #afc9bd;
+  --number-glow: 0 0 1px #bcecdab3, 0 0 5px #8ed8b575, 0 0 9px #75bc991f;
+  --number-glow-small: 0 0 3px #8bd1b04d;
   --copper: #e1bc87;
   --red: #f0a5ad;
   --cash: #789f94;
   --blue: #91b3d7;
   --purple: #baaadb;
-  --positive-bg: #152a25;
+  --positive-bg: #12221d;
   --negative-bg: #2c1c25;
   --shadow: 0 16px 40px #0007;
   color-scheme: dark;
@@ -4540,7 +4540,7 @@ td {
 }
 :root[data-theme="dark"] .sidebar {
   background:
-    radial-gradient(ellipse at 0 0, #7397bd09, transparent 60%), #080f14;
+    radial-gradient(ellipse at 0 0, #6479a60a, transparent 62%), #070b12;
   border-right: 1px solid var(--line);
 }
 :root[data-theme="dark"]
@@ -4548,7 +4548,7 @@ td {
   border-color: var(--field-border);
 }
 :root[data-theme="dark"] .button.primary:hover:not(:disabled) {
-  background: #3d6958;
+  background: #2b463a;
   box-shadow: none;
 }
 :root[data-theme="dark"]
@@ -4560,12 +4560,12 @@ td {
   color: var(--green);
   background: var(--surface);
   box-shadow:
-    inset 0 0 0 1px #8fcbb16b,
+    inset 0 0 0 1px #91afa24d,
     var(--accent-glow);
 }
 :root[data-theme="dark"] .sidebar .nav-item.active {
   color: var(--green);
-  background: #8fcbb10b;
+  background: #91afa20a;
   box-shadow: inset 2px 0 0 var(--green);
 }
 :root[data-theme="dark"]
@@ -4602,7 +4602,7 @@ td {
   color: var(--copper);
 }
 :root[data-theme="dark"] .settings-body pre {
-  background: #080f14;
+  background: #070c13;
   border: 1px solid var(--line);
   color: var(--green);
 }
@@ -4625,8 +4625,8 @@ td {
 }
 :root[data-theme="dark"] .net-worth-hero {
   background:
-    radial-gradient(ellipse at 57% 90%, #70eeb510, transparent 54%),
-    linear-gradient(115deg, #122029, #0b141a 68%);
+    radial-gradient(ellipse at 5% 0, #6f88b00b, transparent 56%),
+    linear-gradient(115deg, #111b29, #090f18 72%);
 }
 :root[data-theme="dark"]
   :is(
@@ -4665,7 +4665,7 @@ td {
 :root[data-theme="dark"]
   :is(
     .buying-power > strong,
-    .quote-strip > strong,
+    .quote-strip b,
     .holdings-table td[data-label="Current value"] > strong,
     .holdings-table .projected-cell,
     .target-current strong
@@ -4798,11 +4798,11 @@ td {
   box-shadow: inset 0 2px 5px #0005;
 }
 :root[data-theme="dark"] .button.primary.order-confirm:not(:disabled):active {
-  background: #3d6958;
+  background: #2b463a;
   border-color: var(--number-core);
   box-shadow:
     inset 0 2px 5px #0006,
-    0 0 16px #7df6b966;
+    0 0 10px #a1cdbb40;
 }
 @media (prefers-reduced-motion: reduce) {
   .order-confirm {
@@ -4811,4 +4811,34 @@ td {
   .button.primary.order-confirm:not(:disabled):active {
     transform: none;
   }
+}
+
+/* Dark readouts share a crisp sage core; chrome stays below the numeric hierarchy. */
+:root[data-theme="dark"] .topbar {
+  background: #080e17f2;
+}
+:root[data-theme="dark"] .quote-strip > strong {
+  color: var(--ink);
+  text-shadow: none;
+}
+:root[data-theme="dark"]
+  :is(.buying-power > strong, .quote-strip b, .holdings-table .projected-cell) {
+  text-shadow: var(--number-glow-small);
+}
+:root[data-theme="dark"] :is(.negative, .negative-tag),
+:root[data-theme="dark"]
+  :is(.negative, .negative-tag)
+  :is(strong, b, .numeric-highlight, .numeric-readout) {
+  color: var(--red);
+  text-shadow: none !important;
+}
+:root[data-theme="dark"] :is(.warning-text, .error-box, .badge.amber),
+:root[data-theme="dark"]
+  :is(.warning-text, .error-box, .badge.amber)
+  :is(strong, b) {
+  text-shadow: none !important;
+}
+:root[data-theme="dark"] .privacy-mode .private-value,
+:root[data-theme="dark"] .privacy-mode .private-value * {
+  text-shadow: none !important;
 }

@@ -2021,25 +2021,25 @@
   }
 }
 :global(html[data-theme="dark"]) .page {
-  --lp-lime: #8fcbb1;
+  --lp-lime: #a9c4b6;
   color-scheme: dark;
 }
 :global(html[data-theme="dark"]) .previewStage,
 :global(html[data-theme="dark"]) .closing {
   background:
-    radial-gradient(ellipse at 35% 15%, #7beabb0a, transparent 65%), #0a1219;
+    radial-gradient(ellipse at 20% 0, #5c7ca010, transparent 60%), #080e17;
   border: 1px solid var(--line);
 }
 :global(html[data-theme="dark"]) .workspaceVisual {
   background:
-    radial-gradient(ellipse at 85% 100%, #82bac80a, transparent 65%),
+    radial-gradient(ellipse at 85% 100%, #607ba00a, transparent 65%),
     var(--surface-soft);
 }
 :global(html[data-theme="dark"]) .primaryCta {
   box-shadow: var(--accent-glow);
 }
 :global(html[data-theme="dark"]) .primaryCta:hover {
-  background: #3d6958;
+  background: #2b463a;
   box-shadow: none;
 }
 :global(html[data-theme="dark"]) .lightCta {
@@ -2048,7 +2048,7 @@
   box-shadow: none;
 }
 :global(html[data-theme="dark"]) .lightCta:hover {
-  background: #3d6958;
+  background: #2b463a;
 }
 :global(html[data-theme="dark"]) .closing h2 em {
   color: var(--number-soft);
@@ -2063,7 +2063,7 @@
 }
 :global(html[data-theme="dark"]) .previewCard,
 :global(html[data-theme="dark"]) .workspaceCard {
-  box-shadow: 0 24px 60px #0004;
+  box-shadow: 0 20px 45px #0006;
 }
 :global(html[data-theme="dark"]) .previewTotal {
   color: var(--number-core);
@@ -2093,5 +2093,5 @@
 }
 :global(html[data-theme="dark"]) .statusDot {
   background: var(--green);
-  box-shadow: 0 0 0 3px #8fcbb10d;
+  box-shadow: 0 0 0 3px #91afa20d;
 }
