@@ -1,6 +1,6 @@
 # Live U.S. Market Data: Implementation Path
 
-## Current capabilities (2026-09-10)
+## Current capabilities (2026-09-12)
 
 A new checkout defaults to explicitly labeled sample mode and includes illustrative PL stock and standard-option fixtures. Sample prices are not provider quotes. Live IEX stock quotes using paper-account API keys have passed authenticated read-only checks. Each installation supplies its own server-side credentials and checks its selected feeds; public source contains no usable keys or personal configuration. The quote cache is not a market-data subscription.
 
@@ -48,9 +48,15 @@ Entitled provider SIP / OPRA websocket
 
 Keep last quotes visible outside market hours, with their original timestamp and stale status. Stale data alone is not proof of regular-session closure. Do not invent ticks or substitute the latest request time for quote time.
 
-The currently accepted simulator rejects stale/delayed/indicative fills, requires valid executable ask/bid, and checks the provider again on execution. A limit only fills if already crossed; it is not left resting. Prices can change between preview and execution.
+During the open regular session, stale quotes remain blocked. New simulated fills require valid executable bid/ask and a successful provider refresh. Delayed/indicative feeds and unavailable options remain blocked. Prices can change between preview and execution.
 
-**Under implementation, not yet accepted:** a compact closed-session LIMIT simulation for eligible IEX equities. The planned rule uses a successfully refreshed last available quote timestamped at or after the **open of the latest completed regular session**, including later post-close quotes, with server-verified clock/calendar state and original source/time labels. It does not require a quote from the final 15 minutes. BUY fills at the disclosed ask only when ask is at or below the limit; SELL fills at bid only when bid is at or above the limit. Changed quote/session basis requires a new preview, and execution rechecks expiry/market open before committing. Open-session stale data, failed refreshes, invalid quotes and unavailable options remain blocked. This is a historical-price simulation, with no broker submission or queued order. Do not treat this planned exception as shipped behavior.
+Closed-session simulation is limited to **Alpaca IEX equities (`EQUITY`, `alpaca-iex`) and LIMIT orders**. The server clock/calendar must verify that the regular session is closed and identify its latest completed session, including holidays and early closes. The server must successfully refresh a valid quote whose original timestamp is at or after that session's **OPEN**, including later post-close quotes within the existing future-time tolerance. Quotes from an earlier session, invalid/missing/crossed bid/ask, failed refreshes, unknown session state and unsupported feeds cannot use this exception.
+
+The compact ticket displays the last available quote with its original source and `quoteAsOf`; this historical price is not presented as an official closing print or a fresh after-hours quote. BUY limits prefill from ask and fill at ask only when `ask <= limit`; SELL limits prefill from bid and fill at bid only when `bid >= limit`. Noncrossing limits are rejected immediately. There is no resting or queued order and no broker submission or real-money trade.
+
+Guest and saved portfolios share the quote/session policy. For a new fill, changed source, timestamp, bid/ask or session proof requires a new preview, even when a changed price still crosses the limit. Closed-session previews expire after at most 60 seconds or at the next regular-session open, whichever comes first. Execution checks expiry/open after any accounting-lock wait and before commit; an expired preview cannot authorize a new fill. Original source/time/basis remains in receipts and history. Retrying an already completed submission returns its original fill metadata without a new provider check or duplicate cash mutation; missing legacy metadata remains unknown.
+
+A short confirmation sound is limited to new successful simulated fills. The separate Order sounds mute uses its current setting when success arrives and does not change Space radio. Preview, rejection, failure and idempotent replay produce no success chime.
 
 A quote-based fill is still a simulation: it does not model depth, partial fills, slippage, market impact, margin, adjusted contracts, corporate actions, or actual option settlement. The current options UI supports standard 100-share long equity/ETF contracts, not every derivative listed on U.S. exchanges. Quote IV and model assumptions are not the same thing as executable premiums.
 

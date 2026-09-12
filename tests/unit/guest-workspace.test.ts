@@ -106,7 +106,10 @@ describe("temporary guest portfolios", () => {
       ticket = buy(p.id, 1);
     const a = await guestOrder(state, ticket, true),
       b = await guestOrder(state, ticket, true);
-    expect(a).toEqual(b);
+    if (!("execution" in a) || !("execution" in b))
+      throw new Error("Expected executed orders");
+    expect(a).toEqual({ ...b, execution: { ...b.execution, replayed: false } });
+    expect(b.execution.replayed).toBe(true);
     expect(p.orders).toHaveLength(1);
     await expect(
       guestOrder(state, { ...ticket, quantity: 2 }, true),

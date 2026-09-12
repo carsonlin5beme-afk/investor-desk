@@ -7,6 +7,11 @@ import {
   targetScenarioSchema,
 } from "@/server/api/schemas";
 import { resolveTicket } from "@/server/services/order-service";
+import {
+  assertClosedSessionCurrent,
+  auditQuoteMetadata,
+  executionAuditNote,
+} from "@/server/services/closed-session-simulation";
 import { estimateOrderNotional } from "@/server/domain/fill-engine";
 import { decodeContract } from "@/server/providers/demo";
 import { providers } from "@/server/providers/factory";
@@ -133,12 +138,23 @@ export function adjustCash(state: GuestWorkspace, id: string, body: unknown) {
 function executionResult(
   p: GuestPortfolio,
   order: GuestPortfolio["orders"][number],
+  replayed = true,
 ) {
   const fill = order.fills[0],
     position = p.positions.find((p) => p.id === fill.positionId);
   return {
     execution: {
       orderId: order.id,
+      replayed,
+      quoteSource: order.quoteSource,
+      ...auditQuoteMetadata(
+        p.cashLedgerEntries.find(
+          (entry) =>
+            entry.id === order.id &&
+            entry.portfolioId === p.id &&
+            entry.type === order.side,
+        )?.note,
+      ),
       fillId: fill.id,
       fillPrice: fill.price.toNumber(),
       notional: estimateOrderNotional(
@@ -187,10 +203,13 @@ export async function guestOrder(
       );
     return executionResult(p, previous);
   }
-  const { symbol, quote, decision } = await resolveTicket(ticket);
+  const { symbol, quote, decision, closedSession } = await resolveTicket(
+    ticket,
+    execute,
+  );
   if (!decision.fillable || decision.fillPrice == null) {
     if (execute) throw new GuestError(decision.reason ?? "Order not fillable.");
-    return { preview: { ...decision, quote } };
+    return { preview: { ...decision, quote, closedSession } };
   }
   const fillPrice = decision.fillPrice,
     notional = estimateOrderNotional(ticket, fillPrice);
@@ -228,10 +247,12 @@ export async function guestOrder(
         cashAfter: nextCash.toNumber(),
         ownedQuantity: existing?.quantity.toNumber() ?? 0,
         quote,
+        closedSession,
         fees: 0,
       },
     };
   guestLimit(state);
+  assertClosedSessionCurrent(closedSession);
   const now = new Date(),
     quantity = (existing?.quantity ?? new D(0)).plus(
       ticket.side === "BUY" ? ticket.quantity : -ticket.quantity,
@@ -321,14 +342,20 @@ export async function guestOrder(
   p.updatedAt = now;
   p.orders.push(order);
   p.cashLedgerEntries.push({
-    id: guestId(),
+    id: order.id,
     portfolioId: p.id,
     type: ticket.side,
     amount: new D(ticket.side === "BUY" ? -notional : notional),
-    note: `${ticket.side} ${ticket.quantity} ${symbol} (${quote.source})`,
+    note: executionAuditNote(
+      ticket.side,
+      ticket.quantity,
+      symbol,
+      quote,
+      closedSession,
+    ),
     createdAt: now,
   });
-  return executionResult(p, order);
+  return executionResult(p, order, false);
 }
 export async function guestTarget(
   state: GuestWorkspace,

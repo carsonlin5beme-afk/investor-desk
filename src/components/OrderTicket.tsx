@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, useId } from "react";
+import { useEffect, useState, useId, useRef } from "react";
 import { ArrowRight, CheckCircle2, Search, RefreshCw } from "lucide-react";
 import {
   api,
@@ -9,7 +9,12 @@ import {
   money,
   num,
 } from "@/lib/desk-types";
-import { quoteStatus, type QuoteStatus } from "@/lib/quote-status";
+import {
+  quoteStatus,
+  type QuoteStatus,
+  type ClosedSessionBasis,
+} from "@/lib/quote-status";
+import { OrderSuccessAudio } from "@/lib/order-success-audio";
 import { DeskModal } from "./DeskModal";
 import { OptionsExplorer } from "./studio/OptionsExplorer";
 type Quote = {
@@ -27,12 +32,34 @@ type Preview = {
   cashBefore: number;
   cashAfter: number;
   quote: Quote;
+  closedSession?: ClosedSessionBasis | null;
 };
 function requestErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message) return error.message;
   if (typeof error === "string" && error.trim()) return error;
   return "Request failed. Please try again.";
 }
+
+const quoteTimeLabel = (value: string) =>
+  Number.isFinite(Date.parse(value))
+    ? new Intl.DateTimeFormat("en-US", {
+        timeZone: "America/New_York",
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+        second: "2-digit",
+        timeZoneName: "short",
+      }).format(new Date(value))
+    : "Timestamp unavailable";
+const sameClosedQuote = (a: ClosedSessionBasis, b: ClosedSessionBasis) =>
+  a.quoteSource === b.quoteSource &&
+  a.quoteAsOf === b.quoteAsOf &&
+  a.quoteBid === b.quoteBid &&
+  a.quoteAsk === b.quoteAsk &&
+  a.sessionDate === b.sessionDate &&
+  a.nextOpen === b.nextOpen;
 
 export function OrderTicket({
   portfolio,
@@ -104,6 +131,10 @@ export function OrderTicket({
       notional: number;
       portfolioCashBalance: number;
       orderId: string;
+      replayed: boolean;
+      quoteSource: string | null;
+      quoteAsOf: string | null;
+      simulationBasis: "CLOSED_SESSION_LIMIT" | "QUOTE" | null;
       position?: { id: string } | null;
     } | null>(null),
     [clientId, setClientId] = useState(""),
@@ -117,6 +148,39 @@ export function OrderTicket({
     [strikeSearch, setStrikeSearch] = useState(""),
     [chainOpen, setChainOpen] = useState(!holding),
     [showPayoff, setShowPayoff] = useState(false);
+  const [orderMuted, setOrderMuted] = useState(false);
+  const mutedRef = useRef(false);
+  const audio = useRef<OrderSuccessAudio | null>(null);
+  const submitting = useRef(false);
+  const prefill = useRef("");
+  const [retryPending, setRetryPending] = useState(false);
+  const [quoteRefresh, setQuoteRefresh] = useState(0);
+  useEffect(() => {
+    try {
+      mutedRef.current =
+        localStorage.getItem("investor-desk:order-sounds-muted:v1") === "true";
+      setOrderMuted(mutedRef.current);
+    } catch {
+      /* Preference still works. */
+    }
+    return () => {
+      audio.current?.dispose();
+      audio.current = null;
+    };
+  }, []);
+  const changeOrderMute = (muted: boolean) => {
+    mutedRef.current = muted;
+    setOrderMuted(muted);
+    audio.current?.setMuted(muted);
+    try {
+      localStorage.setItem(
+        "investor-desk:order-sounds-muted:v1",
+        String(muted),
+      );
+    } catch {
+      /* Preference still works. */
+    }
+  };
   const payload = {
     portfolioId: portfolio.id,
     assetClass: asset,
@@ -134,8 +198,16 @@ export function OrderTicket({
         }
       : {}),
   };
+  const submission = useRef<
+    | (typeof payload & {
+        clientOrderId: string;
+        closedSessionPreview?: ClosedSessionBasis;
+      })
+    | null
+  >(null);
   const fingerprint = JSON.stringify(payload);
   useEffect(() => {
+    if (submission.current) return;
     setPreview(null);
     setError("");
   }, [fingerprint, query]);
@@ -223,7 +295,7 @@ export function OrderTicket({
       clearInterval(t);
       c.abort();
     };
-  }, [symbol]);
+  }, [symbol, quoteRefresh]);
   useEffect(() => {
     if (asset !== "OPTION" || !symbol) return;
     const c = new AbortController();
@@ -259,7 +331,7 @@ export function OrderTicket({
         }
       });
     return () => c.abort();
-  }, [symbol, asset]);
+  }, [symbol, asset, quoteRefresh]);
   useEffect(() => {
     if (asset !== "OPTION" || !expiration) return;
     const c = new AbortController();
@@ -310,7 +382,7 @@ export function OrderTicket({
       clearInterval(timer);
       c.abort();
     };
-  }, [asset, symbol, expiration, right]);
+  }, [asset, symbol, expiration, right, quoteRefresh]);
   function chooseSymbol(s: string) {
     setSymbol(s);
     setQuery(s);
@@ -330,6 +402,26 @@ export function OrderTicket({
     )?.quantity ?? 0;
   const estimated =
     Number(quantity) * (price ?? 0) * (asset === "OPTION" ? 100 : 1);
+  const closed = asset === "EQUITY" ? availability?.closedSession : undefined;
+  const closedValid = Boolean(
+    closed &&
+    quote &&
+    Date.parse(closed.validUntil) > now &&
+    Date.parse(closed.nextOpen) > now &&
+    closed.quoteSource === quote.source &&
+    closed.quoteAsOf === quote.asOf &&
+    closed.quoteBid === quote.bid &&
+    closed.quoteAsk === quote.ask,
+  );
+  useEffect(() => {
+    if (!closed || submitting.current || retryPending) return;
+    const key = `${asset}:${symbol}:${side}:${closed.sessionDate}`;
+    if (closedValid && quote && prefill.current !== key) {
+      prefill.current = key;
+      setOrderType("LIMIT");
+      setLimit(String(side === "BUY" ? quote.ask : quote.bid));
+    }
+  }, [asset, symbol, side, closed, closedValid, quote, retryPending]);
   const activeStatus =
     asset === "OPTION"
       ? (optionsAvailability ??
@@ -342,17 +434,27 @@ export function OrderTicket({
               now,
             })
           : null))
-      : availability?.blocking
-        ? availability
-        : quote
-          ? quoteStatus({
-              symbol,
-              source: quote.source,
-              asOf: quote.asOf,
-              hasQuote: true,
-              now,
-            })
-          : availability;
+      : closed
+        ? closedValid
+          ? availability
+          : {
+              ...availability!,
+              label: "Quote needs refresh",
+              message:
+                "Refresh the quote to verify the current market session.",
+              blocking: true,
+            }
+        : availability?.blocking
+          ? availability
+          : quote
+            ? quoteStatus({
+                symbol,
+                source: quote.source,
+                asOf: quote.asOf,
+                hasQuote: true,
+                now,
+              })
+            : availability;
   const validPrice = price != null && Number.isFinite(price) && price > 0;
   const previewBlocker = !symbol
     ? "Choose a symbol to begin."
@@ -360,23 +462,30 @@ export function OrderTicket({
       ? "Select a ticker or press Enter to confirm it."
       : activeStatus?.blocking
         ? activeStatus.message
-        : asset === "OPTION" && !contract
-          ? "Choose an expiration and select an option contract."
-          : !validPrice
-            ? quoteLoading
-              ? "Loading a quote..."
-              : "A positive bid/ask quote is required before previewing an order."
-            : !Number.isFinite(Number(quantity)) || Number(quantity) <= 0
-              ? "Enter the number of shares or contracts to trade."
-              : asset === "OPTION" && !Number.isInteger(Number(quantity))
-                ? "Options require a whole number of contracts."
-                : "";
+        : closed && orderType !== "LIMIT"
+          ? "Use a limit order with this closed-session quote."
+          : orderType === "LIMIT" &&
+              (!Number.isFinite(Number(limit)) || Number(limit) <= 0)
+            ? "Enter a positive limit price."
+            : asset === "OPTION" && !contract
+              ? "Choose an expiration and select an option contract."
+              : !validPrice
+                ? quoteLoading
+                  ? "Loading a quote..."
+                  : "A positive bid/ask quote is required before previewing an order."
+                : !Number.isFinite(Number(quantity)) || Number(quantity) <= 0
+                  ? "Enter the number of shares or contracts to trade."
+                  : asset === "OPTION" && !Number.isInteger(Number(quantity))
+                    ? "Options require a whole number of contracts."
+                    : "";
   async function review(e: React.FormEvent) {
     e.preventDefault();
+    if (submitting.current || retryPending) return;
     if (previewBlocker) {
       setError(previewBlocker);
       return;
     }
+    submitting.current = true;
     setBusy(true);
     setError("");
     setPreview(null);
@@ -393,31 +502,79 @@ export function OrderTicket({
     } catch (e) {
       setError((e as Error).message);
     } finally {
+      submitting.current = false;
       setBusy(false);
     }
   }
+  function previewExpired(at: number) {
+    if (!preview) return false;
+    if (at - previewAt >= 60000) return true;
+    if (preview.closedSession)
+      return (
+        Date.parse(preview.closedSession.validUntil) <= at ||
+        Date.parse(preview.closedSession.nextOpen) <= at ||
+        !closedValid ||
+        !closed ||
+        !sameClosedQuote(preview.closedSession, closed)
+      );
+    return Boolean(closed);
+  }
   async function execute() {
-    if (!preview || query !== symbol || Date.now() - previewAt > 60000) {
+    if (submitting.current) return;
+    if (
+      !submission.current &&
+      (!preview || query !== symbol || previewExpired(Date.now()))
+    ) {
       setPreview(null);
       return;
     }
+    submission.current ??= {
+      ...payload,
+      clientOrderId: clientId,
+      ...(preview?.closedSession
+        ? { closedSessionPreview: preview.closedSession }
+        : {}),
+    };
+    submitting.current = true;
     setBusy(true);
     setError("");
+    audio.current ??= new OrderSuccessAudio();
+    audio.current.setMuted(mutedRef.current);
+    const audioAttempt = audio.current.prepare();
     try {
       const data = await api<{ execution: NonNullable<typeof result> }>(
         "/api/orders/execute",
         "POST",
-        { ...payload, clientOrderId: clientId },
+        submission.current,
       );
+      submission.current = null;
+      setRetryPending(false);
       setResult(data.execution);
+      audio.current.success(
+        audioAttempt,
+        data.execution.orderId,
+        data.execution.replayed !== false,
+      );
       saved();
     } catch (e) {
-      setError((e as Error).message);
+      audio.current?.cancel(audioAttempt);
+      const ambiguous = e instanceof TypeError || e instanceof SyntaxError;
+      setRetryPending(ambiguous);
+      if (!ambiguous) {
+        submission.current = null;
+        setPreview(null);
+      }
+      setError(
+        ambiguous
+          ? "The response was interrupted. Check the same order submission before placing another order."
+          : requestErrorMessage(e),
+      );
     } finally {
+      submitting.current = false;
       setBusy(false);
     }
   }
-  const expired = now - previewAt > 60000;
+  const expired = previewExpired(now);
   return (
     <DeskModal
       title={result ? "Order filled" : "Trade simulator"}
@@ -428,6 +585,14 @@ export function OrderTicket({
       footer={
         !result ? (
           <footer className="modal-actions ticket-actions">
+            <label className="order-sounds">
+              <input
+                type="checkbox"
+                checked={!orderMuted}
+                onChange={(event) => changeOrderMute(!event.target.checked)}
+              />
+              Order sounds
+            </label>
             <div className="ticket-sticky-summary">
               <small>
                 {side === "BUY" ? "Estimated debit" : "Estimated credit"} ·{" "}
@@ -451,14 +616,20 @@ export function OrderTicket({
             >
               Cancel
             </button>
-            {preview && !expired ? (
+            {retryPending || (preview && !expired) ? (
               <button
-                className="button primary"
+                className="button primary order-confirm"
                 type="button"
                 onClick={execute}
                 disabled={busy}
               >
-                {busy ? "Executing..." : "Execute simulated order"}
+                {busy
+                  ? "Executing..."
+                  : retryPending
+                    ? "Check order result"
+                    : preview?.closedSession
+                      ? "Simulate limit order"
+                      : "Execute simulated order"}
                 <ArrowRight size={17} />
               </button>
             ) : (
@@ -492,7 +663,11 @@ export function OrderTicket({
       {result ? (
         <div className="modal-body success-state ticket-success">
           <CheckCircle2 size={48} />
-          <h3>Your portfolio is updated.</h3>
+          <h3>
+            {result.replayed
+              ? "This order was already confirmed."
+              : "Your portfolio is updated."}
+          </h3>
           <p>
             {side === "BUY" ? "Bought" : "Sold"} {num(Number(quantity))}{" "}
             {asset === "OPTION" ? "contracts of" : "shares of"} {symbol} at{" "}
@@ -501,12 +676,23 @@ export function OrderTicket({
           <div className="scenario-preview">
             <span>Total {side === "BUY" ? "debit" : "credit"}</span>
             <strong>{money(result.notional)}</strong>
-            <span>Cash remaining</span>
+            <span>
+              {result.replayed ? "Current cash balance" : "Cash remaining"}
+            </span>
             <strong>{money(result.portfolioCashBalance)}</strong>
           </div>
           <p className="fine-print">
             Simulation only. No order was sent to a broker.
           </p>
+          {result.quoteAsOf && (
+            <p className="execution-provenance">
+              {result.simulationBasis === "CLOSED_SESSION_LIMIT"
+                ? "Closed-session limit simulation · Last available quote"
+                : "Execution quote"}
+              <br />
+              {result.quoteSource} · {quoteTimeLabel(result.quoteAsOf)}
+            </p>
+          )}
           <div className="receipt-actions">
             {result.position && onSetTarget && (
               <button
@@ -537,7 +723,7 @@ export function OrderTicket({
         </div>
       ) : (
         <form id={formId} className="modal-body trade-ticket" onSubmit={review}>
-          <fieldset disabled={busy}>
+          <fieldset disabled={busy || retryPending}>
             <div className="ticket-top">
               <div className="segmented">
                 <button
@@ -707,18 +893,31 @@ export function OrderTicket({
                   {mode === "demo"
                     ? "ILLUSTRATIVE PRICES"
                     : quote
-                      ? `${quote.source} · ${new Date(quote.asOf).toLocaleString()}`
+                      ? `${quote.source} · ${quoteTimeLabel(quote.asOf)}`
                       : "QUOTE UNAVAILABLE"}
                 </small>
               </div>
             )}
             {activeStatus && (
               <div
-                className={`quote-notice ${activeStatus.blocking ? "blocking" : "compact-notice"}`}
+                className={`quote-notice ticket-quote-status ${activeStatus.blocking ? "blocking" : "compact-notice"}`}
                 role="status"
               >
                 <strong>{activeStatus.label}</strong>
-                <p>{activeStatus.message}</p>
+                <p>
+                  {closedValid
+                    ? "Last available quote · Simulated limit orders only."
+                    : activeStatus.message}
+                </p>
+                {activeStatus.blocking && (
+                  <button
+                    type="button"
+                    className="text-button"
+                    onClick={() => setQuoteRefresh((value) => value + 1)}
+                  >
+                    Refresh quote
+                  </button>
+                )}
                 {activeStatus.code === "DEMO_UNAVAILABLE" && (
                   <div className="sample-symbols">
                     <span>Try an illustrative sample</span>
@@ -947,7 +1146,9 @@ export function OrderTicket({
                   value={orderType}
                   onChange={(e) => setOrderType(e.target.value)}
                 >
-                  <option value="MARKET">Market</option>
+                  <option value="MARKET" disabled={Boolean(closed)}>
+                    Market
+                  </option>
                   <option value="LIMIT">Limit (immediate or cancel)</option>
                 </select>
               </label>
@@ -1093,7 +1294,7 @@ export function OrderTicket({
               Prices can change between preview and execution.
             </p>
           </fieldset>
-          {error && !activeStatus?.blocking && (
+          {error && (
             <div className="error-box" role="alert">
               {error}
             </div>
@@ -1116,6 +1317,15 @@ export function OrderTicket({
                   </span>
                 )}
               </p>
+              {preview.closedSession && (
+                <p className="execution-provenance">
+                  Uses the last available quote while the regular session is
+                  closed.
+                  <br />
+                  {preview.closedSession.quoteSource} ·{" "}
+                  {quoteTimeLabel(preview.closedSession.quoteAsOf)}
+                </p>
+              )}
               <div className="scenario-preview">
                 <span>Estimated cash after fill</span>
                 <strong>{money(preview.cashAfter)}</strong>
@@ -1123,7 +1333,7 @@ export function OrderTicket({
               <small>
                 {expired
                   ? "Preview expired. Refresh before executing."
-                  : `Preview valid for ${Math.max(0, 60 - Math.floor((now - previewAt) / 1000))}s. Execution uses a fresh quote.`}
+                  : `Preview valid for ${Math.min(60, Math.max(0, Math.ceil((Math.min(previewAt + 60000, preview.closedSession ? Date.parse(preview.closedSession.validUntil) : Infinity) - now) / 1000)))}s. ${preview.closedSession ? "Execution rechecks this quote and market session." : "Execution refreshes the quote."}`}
               </small>
             </div>
           )}

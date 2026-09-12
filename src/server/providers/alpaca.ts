@@ -28,22 +28,34 @@ export class AlpacaEquityProvider implements EquityDataProvider {
     env.ALPACA_API_KEY && env.ALPACA_API_SECRET,
   );
 
-  async getQuote(symbol: string): Promise<MarketQuote | null> {
-    const quotes = await this.getQuotes([symbol]);
+  async getQuote(
+    symbol: string,
+    options?: { forceRefresh?: boolean },
+  ): Promise<MarketQuote | null> {
+    const quotes = await this.getQuotes([symbol], options);
     return quotes[0] ?? null;
   }
 
-  async getQuotes(symbols: string[]): Promise<MarketQuote[]> {
+  async getQuotes(
+    symbols: string[],
+    options?: { forceRefresh?: boolean },
+  ): Promise<MarketQuote[]> {
     if (!this.hasCreds || symbols.length === 0) {
       return [];
     }
 
     const data = await alpacaGet<{
       quotes?: Record<string, { bp?: number; ap?: number; t?: string }>;
-    }>("/v2/stocks/quotes/latest", {
-      symbols: symbols.join(","),
-      feed: env.ALPACA_FEED,
-    });
+    }>(
+      "/v2/stocks/quotes/latest",
+      {
+        symbols: symbols.join(","),
+        feed: env.ALPACA_FEED,
+      },
+      false,
+      1000,
+      options?.forceRefresh,
+    );
     return Object.entries(data.quotes ?? {}).map(([symbol, payload]) =>
       parseAlpacaEquityQuote(symbol, payload),
     );

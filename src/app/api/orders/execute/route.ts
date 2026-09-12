@@ -23,6 +23,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       execution: {
         orderId: execution.order.id,
+        replayed: execution.replayed,
+        simulationBasis: execution.simulationBasis,
+        quoteSource: execution.quoteSource,
+        quoteAsOf: execution.quoteAsOf,
         fillId: execution.fill.id,
         fillPrice: execution.fillPrice,
         notional: execution.notional,

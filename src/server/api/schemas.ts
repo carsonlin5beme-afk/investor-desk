@@ -22,6 +22,18 @@ export const cashAdjustSchema = z.object({
 export const orderTicketSchema = z
   .object({
     clientOrderId: z.string().uuid().optional(),
+    closedSessionPreview: z
+      .object({
+        kind: z.literal("CLOSED_SESSION_LIMIT"),
+        quoteSource: z.literal("alpaca-iex"),
+        quoteAsOf: z.string().datetime(),
+        quoteBid: z.number().finite().positive(),
+        quoteAsk: z.number().finite().positive(),
+        sessionDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        nextOpen: z.string().datetime(),
+        validUntil: z.string().datetime(),
+      })
+      .optional(),
     portfolioId: z.string().min(1),
     assetClass: z.nativeEnum(AssetClass),
     symbol: z

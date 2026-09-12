@@ -103,7 +103,15 @@ Keys stay on the server and are gitignored; a new checkout includes only sample 
 
 The dashboard and open option chain refresh every 15 seconds (dashboard polling pauses when hidden). The ticket now explains missing sample symbols, absent credentials, delayed feeds, failed refreshes, and stale timestamps. Forced trade refresh failures never fall back to cached execution prices. See the [market-data setup and transport plan](docs/live-market-data.md).
 
-Quote requests are cached and deduplicated. `/api/quotes/stream` provides a lifecycle-managed polling SSE feed with actual quote timestamps and stale flags. The Alpaca adapter also exposes websocket subscriptions; the current dashboard uses polling rather than a permanent websocket worker. Tradier requests use timeouts, caching, and rate-limit cooldowns. Closed-market quotes remain visible; the currently accepted execution path blocks quotes older than the configured threshold. A compact, explicitly labeled closed-session IEX LIMIT simulation using an eligible last-session quote is **under implementation and not yet accepted**; do not assume that exception is available in this build.
+Quote requests are cached and deduplicated. `/api/quotes/stream` provides a lifecycle-managed polling SSE feed with actual quote timestamps and stale flags. The Alpaca adapter also exposes websocket subscriptions; the current dashboard uses polling rather than a permanent websocket worker. Tradier requests use timeouts, caching, and rate-limit cooldowns. Closed-market quotes remain visible with their original timestamps. Open-session stale quotes remain blocked; eligible IEX equity limit orders can use the closed-session simulation described below.
+
+### Closed-session simulated limits
+
+When Alpaca clock/calendar data verifies that the regular session is closed, **Alpaca IEX equities (`EQUITY`, `alpaca-iex`) can use LIMIT simulation** with a valid last available quote. The server must successfully refresh the provider quote, and its original timestamp must be at or after the **open of the latest completed regular session**, including later post-close quotes. The ticket shows “Last available quote” with its original time and source. This historical price is not labeled an official closing price or a fresh after-hours quote.
+
+BUY limits prefill from ask and fill at that ask only when `ask <= limit`; SELL limits prefill from bid and fill at that bid only when `bid >= limit`. Noncrossing limits are rejected immediately, with no queued order. For a new fill, changed or expired quote/session proof requires a fresh preview; the server rechecks expiry and the next market open before committing. Failed refreshes, unknown session state, invalid quotes, unsupported feeds and unavailable options remain blocked. These rules apply to guest and saved portfolios; all trades use simulated money and no orders reach a broker.
+
+Receipts preserve the original quote source, timestamp and closed-session basis, including on an already completed order's replay. A short, quiet confirmation sound plays only for a new successful simulated fill. **Order sounds** can be muted independently of Space radio; previews, failures and replays are silent.
 
 ### Schwab stocks and options
 

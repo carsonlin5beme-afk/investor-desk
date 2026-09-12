@@ -6,8 +6,15 @@ import { OrderTicket } from "@/server/domain/types";
 import { providers } from "@/server/providers/factory";
 import { decodeContract } from "@/server/providers/demo";
 import { getLiveQuote } from "./quote-service";
+import type { ClosedSessionBasis } from "@/lib/quote-status";
+import {
+  assertClosedSessionCurrent,
+  auditQuoteMetadata,
+  closedSessionEligibility,
+  executionAuditNote,
+} from "./closed-session-simulation";
 const D = Prisma.Decimal;
-export async function resolveTicket(ticket: OrderTicket) {
+export async function resolveTicket(ticket: OrderTicket, execute = false) {
   const symbol =
     ticket.assetClass === "OPTION"
       ? ticket.optionContractSymbol!
@@ -46,14 +53,50 @@ export async function resolveTicket(ticket: OrderTicket) {
     (quote.source.includes("delayed") ||
       quote.source.includes("indicative") ||
       !Number.isFinite(quote.asOf.getTime()) ||
-      quote.asOf.getTime() > Date.now() + 5000 ||
-      Date.now() - quote.asOf.getTime() > env.QUOTE_STALE_SECONDS * 1000)
+      quote.asOf.getTime() > Date.now() + 5000)
   )
     throw new Error(
       "Quote is stale or delayed. Last prices remain visible, but a fresh bid/ask is required to trade.",
     );
+  let closedSession: ClosedSessionBasis | null = null;
+  if (
+    quote.source !== "demo" &&
+    Date.now() - quote.asOf.getTime() > env.QUOTE_STALE_SECONDS * 1000
+  ) {
+    const eligibility = await closedSessionEligibility(quote, execute);
+    if (!eligibility.basis)
+      throw new Error(
+        eligibility.reason ??
+          "Quote is stale or delayed. Last prices remain visible, but a fresh bid/ask is required to trade.",
+      );
+    if (ticket.orderType !== "LIMIT")
+      throw new Error(
+        "Use a simulated limit order with the last available quote while the regular session is closed.",
+      );
+    closedSession = eligibility.basis;
+  }
+  if (execute && (closedSession || ticket.closedSessionPreview)) {
+    const expected = ticket.closedSessionPreview;
+    if (
+      !expected ||
+      !closedSession ||
+      expected.kind !== closedSession.kind ||
+      expected.quoteSource !== closedSession.quoteSource ||
+      expected.quoteAsOf !== closedSession.quoteAsOf ||
+      expected.quoteBid !== closedSession.quoteBid ||
+      expected.quoteAsk !== closedSession.quoteAsk ||
+      expected.sessionDate !== closedSession.sessionDate ||
+      expected.nextOpen !== closedSession.nextOpen ||
+      Date.parse(expected.validUntil) > Date.now() + 60000
+    )
+      throw new Error(
+        "The quote or session basis changed. Preview the simulated limit order again.",
+      );
+    assertClosedSessionCurrent(expected);
+    closedSession.validUntil = expected.validUntil;
+  }
   const decision = decideFill(ticket, quote);
-  return { symbol, quote, decision };
+  return { symbol, quote, decision, closedSession };
 }
 async function checkAccount(
   tx: Prisma.TransactionClient,
@@ -97,9 +140,10 @@ async function checkAccount(
   return { portfolio, position };
 }
 export const previewOrder = async (ticket: OrderTicket) => {
-  const { symbol, quote, decision } = await resolveTicket(ticket);
+  const { symbol, quote, decision, closedSession } =
+    await resolveTicket(ticket);
   if (!decision.fillable || decision.fillPrice == null)
-    return { ...decision, quote };
+    return { ...decision, quote, closedSession };
   const estimatedNotional = estimateOrderNotional(ticket, decision.fillPrice);
   const { portfolio, position } = await checkAccount(
     prisma,
@@ -117,6 +161,7 @@ export const previewOrder = async (ticket: OrderTicket) => {
       .toNumber(),
     ownedQuantity: position?.quantity.toNumber() ?? 0,
     quote,
+    closedSession,
     fees: 0,
   };
 };
@@ -148,6 +193,10 @@ async function replay(tx: Prisma.TransactionClient, ticket: OrderTicket) {
   const position = fill.positionId
     ? await tx.position.findUnique({ where: { id: fill.positionId } })
     : null;
+  const audit = await tx.cashLedgerEntry.findFirst({
+    where: { id: order.id, portfolioId: order.portfolioId, type: order.side },
+    select: { note: true },
+  });
   return {
     order,
     fill,
@@ -155,12 +204,18 @@ async function replay(tx: Prisma.TransactionClient, ticket: OrderTicket) {
     portfolioCashBalance: portfolio.cashBalance.toNumber(),
     fillPrice: fill.price.toNumber(),
     notional: estimateOrderNotional(ticket, fill.price.toNumber()),
+    replayed: true,
+    quoteSource: order.quoteSource,
+    ...auditQuoteMetadata(audit?.note),
   };
 }
 export const executeOrder = async (ticket: OrderTicket) => {
   const previous = await replay(prisma, ticket);
   if (previous) return previous;
-  const { symbol, quote, decision } = await resolveTicket(ticket);
+  const { symbol, quote, decision, closedSession } = await resolveTicket(
+    ticket,
+    true,
+  );
   if (!decision.fillable || decision.fillPrice == null)
     throw new Error(decision.reason ?? "Order not fillable.");
   const fillPrice = decision.fillPrice;
@@ -171,6 +226,7 @@ export const executeOrder = async (ticket: OrderTicket) => {
       await tx.$queryRaw`SELECT id FROM "Portfolio" WHERE id = ${ticket.portfolioId} FOR UPDATE`;
       const duplicate = await replay(tx, ticket);
       if (duplicate) return duplicate;
+      assertClosedSessionCurrent(closedSession);
       const { portfolio, position: existing } = await checkAccount(
         tx,
         ticket,
@@ -180,17 +236,10 @@ export const executeOrder = async (ticket: OrderTicket) => {
       const nextCash = portfolio.cashBalance.plus(
         ticket.side === "BUY" ? -notional : notional,
       );
+      assertClosedSessionCurrent(closedSession);
       await tx.portfolio.update({
         where: { id: portfolio.id },
         data: { cashBalance: nextCash },
-      });
-      await tx.cashLedgerEntry.create({
-        data: {
-          portfolioId: portfolio.id,
-          type: ticket.side,
-          amount: ticket.side === "BUY" ? -notional : notional,
-          note: `${ticket.side} ${ticket.quantity} ${symbol} (${quote.source})`,
-        },
       });
       const order = await tx.order.create({
         data: {
@@ -212,6 +261,22 @@ export const executeOrder = async (ticket: OrderTicket) => {
               ? decodeContract(symbol).expiration
               : undefined,
           filledAt: new Date(),
+        },
+      });
+      await tx.cashLedgerEntry.create({
+        data: {
+          // Durable receipt association without changing the database schema.
+          id: order.id,
+          portfolioId: portfolio.id,
+          type: ticket.side,
+          amount: ticket.side === "BUY" ? -notional : notional,
+          note: executionAuditNote(
+            ticket.side,
+            ticket.quantity,
+            symbol,
+            quote,
+            closedSession,
+          ),
         },
       });
       const quantity = (existing?.quantity ?? new D(0)).plus(
@@ -275,6 +340,7 @@ export const executeOrder = async (ticket: OrderTicket) => {
           realizedPnL,
         },
       });
+      assertClosedSessionCurrent(closedSession);
       return {
         order,
         fill,
@@ -282,6 +348,17 @@ export const executeOrder = async (ticket: OrderTicket) => {
         portfolioCashBalance: nextCash.toNumber(),
         fillPrice,
         notional,
+        replayed: false,
+        quoteSource: quote.source,
+        ...auditQuoteMetadata(
+          executionAuditNote(
+            ticket.side,
+            ticket.quantity,
+            symbol,
+            quote,
+            closedSession,
+          ),
+        ),
       };
     },
     { maxWait: 15000, timeout: 15000 },

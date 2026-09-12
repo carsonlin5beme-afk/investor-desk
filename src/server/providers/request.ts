@@ -7,10 +7,12 @@ export async function providerRequest<T>(
   url: string,
   headers: Record<string, string> = {},
   ttlMs = 0,
+  options: { bypassCache?: boolean } = {},
 ): Promise<T> {
   const key = provider + url,
     cached = cache.get(key);
-  if (cached && cached.until > Date.now()) return cached.value as T;
+  if (!options.bypassCache && cached && cached.until > Date.now())
+    return cached.value as T;
   if ((cooldown.get(provider) ?? 0) > Date.now())
     throw new Error(`${provider}: rate-limited; waiting before retry`);
   if (pending.has(key)) return pending.get(key) as Promise<T>;

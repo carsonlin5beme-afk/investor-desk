@@ -8,6 +8,7 @@ export function alpacaGet<T>(
   params: Record<string, string> = {},
   reference = false,
   ttl = 1000,
+  forceRefresh = false,
 ): Promise<T> {
   const base = reference
     ? env.ALPACA_REFERENCE_BASE_URL
@@ -20,6 +21,7 @@ export function alpacaGet<T>(
       "APCA-API-SECRET-KEY": env.ALPACA_API_SECRET ?? "",
     },
     ttl,
+    { bypassCache: forceRefresh },
   );
 }
 export function finitePrice(value: unknown): number | null {

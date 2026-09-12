@@ -42,9 +42,16 @@ export const getQuoteResult = async (
     try {
       const raw =
         assetClass === "EQUITY"
-          ? await providers.equities.getQuote(symbol)
+          ? await providers.equities.getQuote(symbol, { forceRefresh: force })
           : await providers.options.getOptionQuote(symbol);
       if (!raw) return { quote: force ? null : cached, refreshFailed: true };
+      if (
+        assetClass === "EQUITY" &&
+        (!("symbol" in raw) ||
+          raw.symbol !== symbol ||
+          raw.assetClass !== assetClass)
+      )
+        throw new Error("Unexpected quote instrument");
       if (raw.source && !acceptsQuoteSource(expectedSource, raw.source))
         throw new Error("Unexpected quote feed source");
       const quote: MarketQuote = {

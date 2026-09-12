@@ -25,8 +25,14 @@ export interface OptionContract {
 }
 
 export interface EquityDataProvider {
-  getQuote(symbol: string): Promise<MarketQuote | null>;
-  getQuotes(symbols: string[]): Promise<MarketQuote[]>;
+  getQuote(
+    symbol: string,
+    options?: { forceRefresh?: boolean },
+  ): Promise<MarketQuote | null>;
+  getQuotes(
+    symbols: string[],
+    options?: { forceRefresh?: boolean },
+  ): Promise<MarketQuote[]>;
   subscribe(
     symbols: string[],
     onQuote: (quote: MarketQuote) => void,

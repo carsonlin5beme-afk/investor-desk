@@ -1,9 +1,21 @@
+export type ClosedSessionBasis = {
+  kind: "CLOSED_SESSION_LIMIT";
+  quoteSource: string;
+  quoteAsOf: string;
+  quoteBid: number;
+  quoteAsk: number;
+  sessionDate: string;
+  nextOpen: string;
+  validUntil: string;
+};
+
 export type QuoteStatus = {
   code: string;
   label: string;
   message: string;
   blocking: boolean;
   connectionRequired: boolean;
+  closedSession?: ClosedSessionBasis;
 };
 export function quoteStatus(input: {
   source: string;

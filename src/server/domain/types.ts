@@ -5,6 +5,7 @@ import {
   Side,
   TargetMode,
 } from "@prisma/client";
+import type { ClosedSessionBasis } from "@/lib/quote-status";
 
 export interface MarketQuote {
   impliedVolatility?: number | null;
@@ -19,6 +20,7 @@ export interface MarketQuote {
 }
 
 export interface OrderTicket {
+  closedSessionPreview?: ClosedSessionBasis;
   clientOrderId?: string;
   portfolioId: string;
   assetClass: AssetClass;
