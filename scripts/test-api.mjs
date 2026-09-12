@@ -71,8 +71,17 @@ try {
   const blank = await request("/api/desk");
   assert.equal(blank.portfolios.length, 0, "New profile starts empty");
   const pl = await request("/api/quotes/snapshot?symbol=PL&assetClass=EQUITY");
-  assert.equal(pl.quote, null);
-  assert.equal(pl.availability.code, "DEMO_UNAVAILABLE");
+  assert.equal(pl.quote.symbol, "PL");
+  assert.equal(pl.quote.source, "demo");
+  assert.ok(pl.quote.bid > 0 && pl.quote.ask >= pl.quote.bid);
+  assert.equal(pl.availability.blocking, false);
+  ok("Supported PL sample quote remains labeled and usable");
+  const unsupported = await request(
+    "/api/quotes/snapshot?symbol=ZZZZ&assetClass=EQUITY",
+  );
+  assert.equal(unsupported.quote, null);
+  assert.equal(unsupported.availability.code, "DEMO_UNAVAILABLE");
+  assert.equal(unsupported.availability.blocking, true);
   ok("New profile starts blank and unsupported sample ticker is explained");
   const p = await portfolio("Personal", 250000),
     p2 = await portfolio("Second", 1000);
