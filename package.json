@@ -6,6 +6,7 @@
     "dev": "next dev --hostname 127.0.0.1",
     "build": "next build",
     "start": "next start --hostname 127.0.0.1",
+    "start:hosted": "node scripts/hosted-start.mjs",
     "lint": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",

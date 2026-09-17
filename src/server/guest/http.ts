@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { currentProfile } from "@/server/auth/access";
 import { env } from "@/lib/env";
+import { deploymentOrigin } from "@/lib/deployment-origin.mjs";
 import {
   isDemo,
   equitiesConfigured,
@@ -42,10 +43,13 @@ export function guestCookie(
   request: Request,
   clear = false,
 ) {
+  const deployment = deploymentOrigin(process.env.BETTER_AUTH_URL);
   response.cookies.set(GUEST_COOKIE, token, {
     httpOnly: true,
     sameSite: "lax",
-    secure: new URL(request.url).protocol === "https:",
+    secure:
+      deployment.origin.startsWith("https:") ||
+      new URL(request.url).protocol === "https:",
     path: "/",
     ...(clear ? { maxAge: 0 } : {}),
   });

@@ -1,0 +1,30 @@
+# Optional single-process demo beta. See docs/hosted-deployment.md before activation.
+# Free services sleep and restart; temporary guest work is lost on restart.
+# Supply a NEW external Postgres database, never the local workspace database.
+services:
+  - type: web
+    name: investor-desk
+    runtime: node
+    plan: free
+    region: virginia
+    numInstances: 1
+    branch: main
+    autoDeployTrigger: "off"
+    buildCommand: npm ci --include=dev && node node_modules/prisma/build/index.js generate && npm run build
+    startCommand: node node_modules/prisma/build/index.js migrate deploy && npm run start:hosted
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: 24.14.0
+      - key: NODE_ENV
+        value: production
+      - key: NEXT_TELEMETRY_DISABLED
+        value: "1"
+      - key: MARKET_DATA_MODE
+        value: demo
+      - key: DATABASE_URL
+        sync: false
+      - key: BETTER_AUTH_URL
+        sync: false
+      - key: BETTER_AUTH_SECRET
+        generateValue: true
