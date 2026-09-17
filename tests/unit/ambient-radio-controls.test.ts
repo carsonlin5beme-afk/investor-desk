@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
   AmbientRadio,
   AmbientRadioControls,
+  AmbientRadioOrb,
   DialogRadioControl,
 } from "@/components/AmbientRadio";
 import type { AmbientState } from "@/lib/ambient-audio";
@@ -158,4 +159,68 @@ it("keeps volume zero as actual Playing · Muted rather than a failed start", as
   expect(audio.volume).toHaveBeenLastCalledWith(0);
   expect(host.textContent).toContain("Playing · Muted");
   expect(orbits()[0].dataset.playing).toBe("true");
+});
+
+it("the homepage orb is an opt-in toggle with honest playback and failure states", async () => {
+  await act(() => root!.unmount());
+  await act(() => {
+    root = createRoot(host);
+    root.render(
+      createElement(AmbientRadio, { children: createElement(AmbientRadioOrb) }),
+    );
+  });
+  expect(audio.created).not.toHaveBeenCalled();
+  expect(host.querySelectorAll("button")).toHaveLength(1);
+  expect(
+    host.querySelector('[aria-label="Show space radio controls"]'),
+  ).toBeNull();
+  expect(button("Play space radio").getAttribute("aria-pressed")).toBe("false");
+  await click("Play space radio");
+  await state("starting");
+  expect(orbits()[0].dataset.playing).toBe("false");
+  await click("Pause space radio");
+  expect(audio.pause).toHaveBeenCalledTimes(1);
+  await state("playing");
+  expect(button("Pause space radio").getAttribute("aria-pressed")).toBe("true");
+  expect(orbits()[0].dataset.playing).toBe("true");
+  await state("suspended");
+  expect(host.querySelector('[role="status"]')?.textContent).toContain(
+    "Tap to resume",
+  );
+  expect(orbits()[0].dataset.playing).toBe("false");
+  await state("error");
+  expect(host.querySelector('[role="status"]')?.textContent).toContain(
+    "Playback unavailable",
+  );
+  await click("Play space radio");
+  expect(audio.created).toHaveBeenCalledTimes(1);
+  expect(audio.play).toHaveBeenCalledTimes(2);
+});
+
+it("moving from the homepage orb to full controls preserves one player and volume", async () => {
+  await act(() => root!.unmount());
+  const render = (orb: boolean) => {
+    root!.render(
+      createElement(AmbientRadio, {
+        children: orb
+          ? createElement(AmbientRadioOrb)
+          : createElement(AmbientRadioControls),
+      }),
+    );
+  };
+  await act(() => {
+    root = createRoot(host);
+    render(true);
+  });
+  await click("Play space radio");
+  await state("playing");
+  await act(() => render(false));
+  expect(orbits()[0].dataset.playing).toBe("true");
+  expect(audio.created).toHaveBeenCalledTimes(1);
+  expect(audio.dispose).not.toHaveBeenCalled();
+  await click("Show space radio controls");
+  expect(host.querySelector('[aria-label="Space radio volume"]')).toBeTruthy();
+  expect(host.textContent).toContain("The Long Way Home");
+  await click("Pause space radio");
+  expect(audio.pause).toHaveBeenCalledTimes(1);
 });

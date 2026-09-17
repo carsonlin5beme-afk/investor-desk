@@ -2205,20 +2205,20 @@
 }
 .header.titleHeader .headerCta {
   justify-content: center;
-  width: 89.7px;
-  min-width: 89.7px;
-  height: 35.2px;
-  min-height: 35.2px;
-  padding: 5px 8px;
+  width: 71.76px;
+  min-width: 71.76px;
+  height: 28.16px;
+  min-height: 28.16px;
+  padding: 4px 6.4px;
   gap: 0;
-  font-size: 17px;
+  font-size: 13.6px;
   line-height: 1;
   font-weight: 400;
   font-family: var(--font-button, var(--font-ui)), var(--font-ui), sans-serif;
   font-synthesis: none;
   -webkit-text-stroke: 0;
   letter-spacing: 0.02em;
-  border-radius: 10px;
+  border-radius: 8px;
   border-color: #a6bec047;
   background:
     linear-gradient(160deg, #c9e5ec14, #05090f30 48%, #afc9df08), #080d14ba;

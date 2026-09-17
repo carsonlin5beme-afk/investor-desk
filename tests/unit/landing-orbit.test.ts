@@ -31,6 +31,13 @@ const mount = () => {
 };
 beforeEach(() => {
   scene.create.mockReset();
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue({
+      ok: true,
+      arrayBuffer: async () => new ArrayBuffer(8),
+    }),
+  );
   media = Object.assign(new EventTarget(), { matches: false });
   visibility = "visible";
   vi.spyOn(document, "visibilityState", "get").mockImplementation(
@@ -79,6 +86,7 @@ it("does not load under reduced motion; live preference changes dispose and rest
   mount();
   await visible();
   expect(scene.create).not.toHaveBeenCalled();
+  expect(fetch).not.toHaveBeenCalled();
   expect(states.at(-1)).toEqual({
     label: "Motion reduced",
     paused: false,
@@ -150,4 +158,66 @@ it("keeps static artwork after a failed model and stops scheduling while hidden"
   await vi.dynamicImportSettled();
   expect(scene.create).toHaveBeenCalledTimes(1);
   expect(current.dispose).toHaveBeenCalledTimes(1);
+});
+
+it("starts model download immediately on visibility and passes its bytes to the renderer", async () => {
+  const current = viewer();
+  scene.create.mockResolvedValueOnce(current);
+  let resolveBytes!: (value: ArrayBuffer) => void;
+  const bytes = new ArrayBuffer(32);
+  vi.mocked(fetch).mockResolvedValueOnce({
+    ok: true,
+    arrayBuffer: () =>
+      new Promise<ArrayBuffer>((resolve) => {
+        resolveBytes = resolve;
+      }),
+  } as Response);
+  mount();
+  expect(fetch).not.toHaveBeenCalled();
+  intersect([{ isIntersecting: true }]);
+  expect(fetch).toHaveBeenCalledTimes(1);
+  await vi.dynamicImportSettled();
+  expect(scene.create).not.toHaveBeenCalled();
+  resolveBytes(bytes);
+  await vi.dynamicImportSettled();
+  expect(scene.create).toHaveBeenCalledWith(
+    host,
+    expect.objectContaining({ modelData: bytes }),
+  );
+  expect(stage.dataset.state).toBe("ready");
+});
+
+it("cancels an in-flight model download on leave without marking the artwork failed", async () => {
+  vi.mocked(fetch).mockImplementationOnce(
+    (_url, options) =>
+      new Promise((_resolve, reject) => {
+        options?.signal?.addEventListener(
+          "abort",
+          () => reject(new DOMException("Aborted", "AbortError")),
+          { once: true },
+        );
+      }),
+  );
+  mount();
+  intersect([{ isIntersecting: true }]);
+  const signal = vi.mocked(fetch).mock.calls[0][1]!.signal!;
+  controller!.dispose();
+  expect(signal.aborted).toBe(true);
+  await vi.dynamicImportSettled();
+  expect(scene.create).not.toHaveBeenCalled();
+  expect(stage.dataset.state).toBe("static");
+  expect(states.every((state) => state.label !== "Static artwork")).toBe(true);
+});
+
+it("keeps the poster and disables motion when the model request fails", async () => {
+  vi.mocked(fetch).mockResolvedValueOnce({ ok: false } as Response);
+  mount();
+  await visible();
+  expect(scene.create).not.toHaveBeenCalled();
+  expect(stage.dataset.state).toBe("static");
+  expect(states.at(-1)).toEqual({
+    label: "Static artwork",
+    paused: false,
+    disabled: true,
+  });
 });

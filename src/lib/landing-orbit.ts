@@ -100,10 +100,21 @@ export function mountLandingOrbit(
     const signal = controller.signal;
     const current = () => !disposed && version === generation;
     try {
-      const { createScene } = await import("./landing-orbit-scene");
+      // Download the small model while the renderer module loads. Neither starts
+      // until motion is allowed and the artwork is visible.
+      const model = fetch("/landing/investor-orbit.glb", { signal }).then(
+        async (response) => {
+          if (!response.ok) throw new Error("Model unavailable");
+          return response.arrayBuffer();
+        },
+      );
+      const [{ createScene }, modelData] = await Promise.all([
+        import("./landing-orbit-scene"),
+        model,
+      ]);
       if (signal.aborted || !current()) return;
       const candidate = await createScene(host, {
-        modelUrl: "/landing/investor-orbit.glb",
+        modelData,
         signal,
         onContextLoss: () => {
           if (current()) fail();

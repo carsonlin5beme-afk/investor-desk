@@ -183,6 +183,36 @@ export function DialogRadioControl() {
   );
 }
 
+/** The homepage's quiet inlet; it shares the same player as the full controls. */
+export function AmbientRadioOrb() {
+  const radio = useContext(RadioContext);
+  if (!radio) return null;
+  const playing = active(radio.state);
+  const label = playing ? "Pause space radio" : "Play space radio";
+  return (
+    <div
+      className={styles.orbDock}
+      data-ambient-radio="orb"
+      data-state={radio.state}
+    >
+      <button
+        type="button"
+        className={styles.orbButton}
+        onClick={radio.toggle}
+        aria-label={label}
+        aria-pressed={radio.state === "playing"}
+        title={`${label} · The Long Way Home`}
+      >
+        <RadioOrbit />
+      </button>
+      <span className={styles.srOnly} role="status">
+        Space radio: {stateLabel[radio.state]}
+        {radio.state === "playing" && radio.volume === 0 ? " · Muted" : ""}
+      </span>
+    </div>
+  );
+}
+
 /** A header inlet, not another player: audio remains owned by the root provider. */
 export function AmbientRadioControls() {
   const radio = useContext(RadioContext);
@@ -277,8 +307,8 @@ export function AmbientRadioControls() {
           <div className={styles.station}>
             <RadioOrbit />
             <div>
-              <h2>Drift</h2>
-              <p>Soft tones. Distant atmosphere.</p>
+              <h2>The Long Way Home</h2>
+              <p>A quiet journey through the stars.</p>
             </div>
           </div>
           <div className={styles.volumeLabel}>

@@ -45,7 +45,7 @@
   inset: 0;
   background:
     linear-gradient(90deg, #05080e 0%, #05080eaa 30%, transparent 53%),
-    linear-gradient(0deg, #05080e, transparent 12%, transparent 93%, #05080e99);
+    linear-gradient(0deg, #05080e, transparent 12%, transparent 80%, #05080e);
 }
 .copy {
   width: 48%;

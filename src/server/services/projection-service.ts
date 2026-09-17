@@ -14,7 +14,13 @@ type PositionWithRelations = Prisma.PositionGetPayload<{
   include: { targetScenario: true; optionDetails: true };
 }>;
 export async function buildPositionProjection(position: PositionWithRelations) {
-  const quote = await getLiveQuote(position.symbol, position.assetClass);
+  const option = position.optionDetails;
+  // These independent reads retain the quote service's source and cache checks.
+  // A slow option feed must not delay starting the underlying equity request.
+  const [quote, optionUnderlyingQuote] = await Promise.all([
+    getLiveQuote(position.symbol, position.assetClass),
+    option ? getLiveQuote(option.underlying, "EQUITY") : null,
+  ]);
   const mark = quoteMark(quote);
   const quantity = position.quantity.toNumber(),
     avgCost = position.avgCost.toNumber();
@@ -30,7 +36,6 @@ export async function buildPositionProjection(position: PositionWithRelations) {
     sharesOutstandingManual: s?.sharesOutstandingManual?.toNumber(),
     useManualShares: s?.useManualShares,
   });
-  const option = position.optionDetails;
   const expiry = option
     ? resolveOptionExpiry(option.expiration, option.underlying)
     : null;
@@ -59,9 +64,7 @@ export async function buildPositionProjection(position: PositionWithRelations) {
   const targetValue = option
     ? model
     : projectEquityValue(quantity, targetUnderlyingPrice);
-  const underlyingQuote = option
-    ? await getLiveQuote(option.underlying, "EQUITY")
-    : quote;
+  const underlyingQuote = option ? optionUnderlyingQuote : quote;
   return {
     positionId: position.id,
     symbol: position.symbol,

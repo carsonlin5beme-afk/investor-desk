@@ -20,7 +20,12 @@ function fixture() {
   const graph = { fadeVolume: vi.fn(), dispose: vi.fn() };
   const dependencies = {
     context: vi.fn(() => context as unknown as AudioContext),
-    graph: vi.fn(() => graph),
+    graph: vi.fn<
+      (
+        context: BaseAudioContext,
+        onError: () => void,
+      ) => typeof graph | Promise<typeof graph>
+    >(() => graph),
   };
   const states: AmbientState[] = [];
   const engine = new AmbientAudio((state) => states.push(state), dependencies);
@@ -165,5 +170,120 @@ describe("optional ambient radio lifecycle", () => {
     expect(f.graph.dispose).toHaveBeenCalledTimes(1);
     expect(f.context.close).toHaveBeenCalledTimes(1);
     expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+describe("asynchronous space journey setup", () => {
+  it("resumes in the gesture and stays starting until the silent graph is ready", async () => {
+    const f = fixture();
+    let ready!: (graph: typeof f.graph) => void;
+    f.dependencies.graph.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          ready = resolve;
+        }),
+    );
+    const playing = f.engine.play();
+    expect(f.context.resume).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(f.states.at(-1)).toBe("starting");
+    expect(f.graph.fadeVolume).not.toHaveBeenCalled();
+    ready(f.graph);
+    await playing;
+    expect(f.states.at(-1)).toBe("playing");
+    expect(f.graph.fadeVolume).toHaveBeenCalledWith(0.18, 1.6);
+    f.engine.dispose();
+  });
+
+  it("rapid start/pause/start shares one pending graph and only the latest start fades in", async () => {
+    const f = fixture();
+    let ready!: (graph: typeof f.graph) => void;
+    f.dependencies.graph.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          ready = resolve;
+        }),
+    );
+    const first = f.engine.play();
+    await vi.advanceTimersByTimeAsync(0);
+    f.engine.pause();
+    const second = f.engine.play();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(f.dependencies.graph).toHaveBeenCalledTimes(1);
+    ready(f.graph);
+    await Promise.all([first, second]);
+    expect(f.graph.fadeVolume).toHaveBeenCalledTimes(1);
+    expect(f.context.suspend).not.toHaveBeenCalled();
+    expect(f.states.at(-1)).toBe("playing");
+    f.engine.dispose();
+  });
+
+  it("setup timeout remains silent after a late success and supports explicit retry", async () => {
+    const f = fixture();
+    let ready!: (graph: typeof f.graph) => void;
+    f.dependencies.graph.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          ready = resolve;
+        }),
+    );
+    const playing = f.engine.play();
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(f.states.at(-1)).toBe("suspended");
+    ready(f.graph);
+    await playing;
+    expect(f.states).not.toContain("playing");
+    expect(f.graph.fadeVolume).not.toHaveBeenCalled();
+    await f.engine.play();
+    expect(f.dependencies.graph).toHaveBeenCalledTimes(1);
+    expect(f.states.at(-1)).toBe("playing");
+    f.engine.dispose();
+  });
+
+  it("disposes a graph that finishes after the owner has left", async () => {
+    const f = fixture();
+    let ready!: (graph: typeof f.graph) => void;
+    f.dependencies.graph.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          ready = resolve;
+        }),
+    );
+    const playing = f.engine.play();
+    await vi.advanceTimersByTimeAsync(0);
+    f.engine.dispose();
+    ready(f.graph);
+    await playing;
+    expect(f.graph.dispose).toHaveBeenCalledTimes(1);
+    expect(f.context.close).toHaveBeenCalledTimes(1);
+    expect(f.graph.fadeVolume).not.toHaveBeenCalled();
+    expect(f.states).not.toContain("playing");
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("releases rejected setup and a failed processor without letting an old callback retire a retry", async () => {
+    const f = fixture();
+    f.dependencies.graph.mockRejectedValueOnce(new Error("Module denied"));
+    await f.engine.play();
+    expect(f.states.at(-1)).toBe("error");
+    expect(f.context.close).toHaveBeenCalledTimes(1);
+    const secondContext = fixture().context;
+    f.dependencies.context.mockReturnValueOnce(
+      secondContext as unknown as AudioContext,
+    );
+    await f.engine.play();
+    const oldFailure = f.dependencies.graph.mock.calls[1][1];
+    oldFailure();
+    expect(f.states.at(-1)).toBe("error");
+    expect(secondContext.close).toHaveBeenCalledTimes(1);
+    const thirdContext = fixture().context;
+    f.dependencies.context.mockReturnValueOnce(
+      thirdContext as unknown as AudioContext,
+    );
+    await f.engine.play();
+    oldFailure();
+    expect(f.states.at(-1)).toBe("playing");
+    expect(thirdContext.close).not.toHaveBeenCalled();
+    f.engine.dispose();
   });
 });

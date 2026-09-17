@@ -91,6 +91,12 @@ export function InvestorDesk({ portfolioId }: { portfolioId?: string }) {
     [showArchived, setShowArchived] = useState(false),
     [journalSymbol, setJournalSymbol] = useState("");
   const [isMobile, setIsMobile] = useState(false);
+  const [pendingTarget, setPendingTarget] = useState<{
+    portfolioId: string;
+    positionId: string;
+    error: string;
+  } | null>(null);
+  const targetRequest = useRef<AbortController | null>(null);
   useEffect(() => {
     const media = matchMedia("(max-width:760px)");
     const update = () => setIsMobile(media.matches);
@@ -134,28 +140,54 @@ export function InvestorDesk({ portfolioId }: { portfolioId?: string }) {
       trigger?.focus();
     };
   }, [mobileNav, isMobile]);
-  const inFlight = useRef(false),
-    mounted = useRef(true);
-  const load = useCallback(async () => {
-    if (inFlight.current) return;
-    inFlight.current = true;
+  const inFlight = useRef<AbortController | null>(null),
+    queuedRefresh = useRef(false),
+    mounted = useRef(false);
+  const load = useCallback(async (revalidate = false) => {
+    if (!mounted.current) return;
+    if (inFlight.current) {
+      // Polls coalesce; a completed mutation must get a subsequent snapshot.
+      if (revalidate) queuedRefresh.current = true;
+      return;
+    }
+    const controller = new AbortController();
+    inFlight.current = controller;
+    const currentRequest = () =>
+      mounted.current &&
+      inFlight.current === controller &&
+      !controller.signal.aborted;
     setRefreshing(true);
     try {
-      const d = await api<DeskData>("/api/desk");
-      if (mounted.current) {
-        setData(d);
-        setError("");
-        setTicket((old) => {
-          if (!old) return null;
-          const p = d.portfolios.find((p) => p.id === old.portfolio.id);
-          return p ? { ...old, portfolio: p } : null;
-        });
-      }
-    } catch (e) {
-      if (mounted.current) setError((e as Error).message);
+      do {
+        queuedRefresh.current = false;
+        try {
+          const d = await api<DeskData>(
+            "/api/desk",
+            "GET",
+            undefined,
+            controller.signal,
+          );
+          if (currentRequest() && !queuedRefresh.current) {
+            setData(d);
+            setError("");
+            setTicket((old) => {
+              if (!old) return null;
+              const p = d.portfolios.find((p) => p.id === old.portfolio.id);
+              return p ? { ...old, portfolio: p } : null;
+            });
+          }
+        } catch (e) {
+          if (currentRequest() && !queuedRefresh.current)
+            setError(
+              e instanceof Error ? e.message : "Unable to refresh the desk.",
+            );
+        }
+      } while (currentRequest() && queuedRefresh.current);
     } finally {
-      inFlight.current = false;
-      if (mounted.current) setRefreshing(false);
+      if (currentRequest()) {
+        inFlight.current = null;
+        setRefreshing(false);
+      }
     }
   }, []);
   useEffect(() => {
@@ -170,6 +202,9 @@ export function InvestorDesk({ portfolioId }: { portfolioId?: string }) {
     document.addEventListener("visibilitychange", show);
     return () => {
       mounted.current = false;
+      inFlight.current?.abort();
+      inFlight.current = null;
+      queuedRefresh.current = false;
       clearInterval(interval);
       document.removeEventListener("visibilitychange", show);
     };
@@ -194,8 +229,61 @@ export function InvestorDesk({ portfolioId }: { portfolioId?: string }) {
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
   }, [presentation]);
-  const workspace = useWorkspace(data?.user?.id ?? "guest"),
+  const workspaceIdentity = data ? (data.user?.id ?? "guest") : null;
+  const workspace = useWorkspace(workspaceIdentity),
     prefs = workspace.preferences;
+  const abortTargetRequest = useCallback(() => {
+    targetRequest.current?.abort();
+    targetRequest.current = null;
+  }, []);
+  useEffect(() => {
+    setPendingTarget(null);
+    setTarget(null);
+    return abortTargetRequest;
+  }, [workspaceIdentity, abortTargetRequest]);
+  const openFilledTarget = async (portfolioId: string, positionId: string) => {
+    if (!mounted.current || workspaceIdentity === null) return;
+    abortTargetRequest();
+    const controller = new AbortController();
+    targetRequest.current = controller;
+    const current = () =>
+      mounted.current &&
+      targetRequest.current === controller &&
+      !controller.signal.aborted;
+    setTicket(null);
+    setTarget(null);
+    setPendingTarget({ portfolioId, positionId, error: "" });
+    try {
+      const { positions } = await api<{ positions: Holding[] }>(
+        `/api/positions?portfolioId=${encodeURIComponent(portfolioId)}`,
+        "GET",
+        undefined,
+        controller.signal,
+      );
+      if (!current()) return;
+      const holding = positions.find(
+        (item) =>
+          item.id === positionId &&
+          item.portfolioId === portfolioId &&
+          item.quantity > 0,
+      );
+      if (!holding)
+        throw new Error(
+          "This holding is no longer available. Refresh and try again.",
+        );
+      targetRequest.current = null;
+      setPendingTarget(null);
+      setTarget(holding);
+    } catch (e) {
+      if (current())
+        setPendingTarget({
+          portfolioId,
+          positionId,
+          error:
+            e instanceof Error ? e.message : "Unable to load this holding.",
+        });
+    }
+  };
   const all = data?.portfolios ?? [],
     active = all.find((p) => p.id === portfolioId),
     selected = useMemo(
@@ -238,7 +326,7 @@ export function InvestorDesk({ portfolioId }: { portfolioId?: string }) {
         (prefs.order.indexOf(b.id) < 0 ? 999 : prefs.order.indexOf(b.id)),
   );
   const notify = (message = "Portfolio updated") => {
-    void load();
+    void load(true);
     setToast(message);
   };
   const changeView = (v: View) => {
@@ -500,7 +588,7 @@ export function InvestorDesk({ portfolioId }: { portfolioId?: string }) {
               className="icon-button"
               aria-label="Refresh portfolio"
               disabled={refreshing}
-              onClick={load}
+              onClick={() => void load(true)}
             >
               <OrbitRefreshIcon className={refreshing ? "spin" : ""} />
             </button>
@@ -579,7 +667,7 @@ export function InvestorDesk({ portfolioId }: { portfolioId?: string }) {
               <button
                 className="text-button"
                 onClick={() => {
-                  void load();
+                  void load(true);
                   void workspace.reload();
                 }}
               >
@@ -1270,6 +1358,40 @@ export function InvestorDesk({ portfolioId }: { portfolioId?: string }) {
           </div>
         </DeskModal>
       )}
+      {pendingTarget && (
+        <DeskModal
+          title="Target scenario"
+          kicker="Your holding"
+          onDismiss={abortTargetRequest}
+          close={() => {
+            abortTargetRequest();
+            setPendingTarget(null);
+          }}
+        >
+          <div className="modal-body" aria-busy={!pendingTarget.error}>
+            {pendingTarget.error ? (
+              <>
+                <p className="error-box" role="alert">
+                  {pendingTarget.error}
+                </p>
+                <button
+                  className="button secondary"
+                  onClick={() =>
+                    void openFilledTarget(
+                      pendingTarget.portfolioId,
+                      pendingTarget.positionId,
+                    )
+                  }
+                >
+                  Retry
+                </button>
+              </>
+            ) : (
+              <p role="status">Loading your holding…</p>
+            )}
+          </div>
+        </DeskModal>
+      )}
       {target && (
         <TargetEditor
           holding={target}
@@ -1291,19 +1413,9 @@ export function InvestorDesk({ portfolioId }: { portfolioId?: string }) {
           connectData={() => setModal("settings")}
           close={() => setTicket(null)}
           saved={() => notify("Simulated order filled")}
-          onSetTarget={async (positionId) => {
-            try {
-              const fresh = await api<DeskData>("/api/desk");
-              setData(fresh);
-              const h = fresh.portfolios
-                .flatMap((p) => p.positions)
-                .find((h) => h.id === positionId);
-              setTicket(null);
-              if (h) setTarget(h);
-            } catch (e) {
-              setError((e as Error).message);
-            }
-          }}
+          onSetTarget={(positionId) =>
+            void openFilledTarget(ticket.portfolio.id, positionId)
+          }
         />
       )}
       {detail && (

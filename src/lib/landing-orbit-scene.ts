@@ -45,11 +45,11 @@ const disposeObject = (object: THREE.Object3D) => {
 export async function createScene(
   host: HTMLElement,
   {
-    modelUrl,
+    modelData: raw,
     signal,
     onContextLoss,
   }: {
-    modelUrl: string;
+    modelData: ArrayBuffer;
     signal: AbortSignal;
     onContextLoss: () => void;
   },
@@ -82,6 +82,12 @@ export async function createScene(
   const center = new THREE.Vector3(0.49, 1.35, 0);
   const pmrem = new THREE.PMREMGenerator(renderer);
   const environments: THREE.WebGLRenderTarget[] = [];
+  let pmremReleased = false;
+  const yieldToMain = async () => {
+    // Let pending input/paint run between GPU setup phases.
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    if (signal.aborted) throw new DOMException("Aborted", "AbortError");
+  };
   const makeEnvironment = (receiver: string) => {
     const lighting = new THREE.Scene();
     const ambient =
@@ -155,20 +161,23 @@ export async function createScene(
     disposeObject(scene);
     floor?.dispose();
     for (const environment of environments) environment.dispose();
-    pmrem.dispose();
+    if (!pmremReleased) pmrem.dispose();
     renderer.dispose();
     if (!renderer.getContext().isContextLost()) renderer.forceContextLoss();
     canvas.remove();
   };
   try {
+    await yieldToMain();
     scene.environment = makeEnvironment("Sculpture_Light_Receivers");
+    await yieldToMain();
     const innerEnvironment = makeEnvironment("Inner_Fold_Light_Receivers");
+    await yieldToMain();
     const titaniumEnvironment = makeEnvironment(
       "Titanium_Edge_Light_Receivers",
     );
-    const response = await fetch(modelUrl, { signal });
-    if (!response.ok) throw new Error("Model unavailable");
-    const raw = await response.arrayBuffer();
+    pmrem.dispose();
+    pmremReleased = true;
+    await yieldToMain();
     const gltf = await new GLTFLoader().parseAsync(
       raw,
       new URL(".", location.href).href,
@@ -252,6 +261,17 @@ export async function createScene(
         fragmentShader: fragment,
       },
     });
+    // Transmission and main passes draw the floor with the same camera. Keep
+    // one reflection per camera per scene frame; its pixels do not change
+    // between those passes. A new frame or resize still refreshes it.
+    const updateReflection = floor.onBeforeRender.bind(floor);
+    const reflectedCameras = new Set<THREE.Camera>();
+    floor.onBeforeRender = (...args) => {
+      const reflectionCamera = args[2];
+      if (reflectedCameras.has(reflectionCamera)) return;
+      reflectedCameras.add(reflectionCamera);
+      updateReflection(...args);
+    };
     floor.rotation.x = -Math.PI / 2;
     floor.name = "Fixed_Floor_Reflection";
     scene.add(floor);
@@ -279,26 +299,40 @@ export async function createScene(
     shadow.position.set(0.49, 0.005, 0);
     scene.add(shadow);
     const baseRotation = spin.quaternion.clone();
+    const rotationAxis = new THREE.Vector3(0, 1, 0);
+    const rotationStep = new THREE.Quaternion();
+    let dirty = true;
+    let previousWidth = 0,
+      previousHeight = 0,
+      previousPixelRatio = 0;
     let angle = 0,
       frameCount = 0,
       mainCalls = 0,
       allCalls = 0;
     const rotate = (radians: number) => {
+      if (angle === radians) return;
       angle = radians;
+      dirty = true;
       spin.quaternion
         .copy(baseRotation)
-        .multiply(
-          new THREE.Quaternion().setFromAxisAngle(
-            new THREE.Vector3(0, 1, 0),
-            radians,
-          ),
-        );
+        .multiply(rotationStep.setFromAxisAngle(rotationAxis, radians));
     };
     const resize = () => {
       const width = host.clientWidth,
         height = host.clientHeight;
       if (!width || !height) return;
       const mobile = width <= 760;
+      const pixelRatio = mobile ? 1 : Math.min(devicePixelRatio, 1.5);
+      if (
+        width === previousWidth &&
+        height === previousHeight &&
+        pixelRatio === previousPixelRatio
+      )
+        return;
+      previousWidth = width;
+      previousHeight = height;
+      previousPixelRatio = pixelRatio;
+      dirty = true;
       const span = mobile ? 3.9 : 6.1;
       const vertical = (span * height) / width;
       camera.left = -span / 2;
@@ -309,7 +343,7 @@ export async function createScene(
       camera.position.x = mobile ? 0.49 : -0.98;
       camera.lookAt(mobile ? 0.49 : -0.98, 1.26, 0);
       camera.updateProjectionMatrix();
-      renderer.setPixelRatio(mobile ? 1 : Math.min(devicePixelRatio, 1.5));
+      renderer.setPixelRatio(pixelRatio);
       renderer.setSize(width, height, false);
       // Match the view aspect and retain enough samples for narrow metal edges.
       // Keep the longest side bounded even on high-DPI desktop displays.
@@ -325,9 +359,11 @@ export async function createScene(
       );
     };
     const render = () => {
-      if (disposed) return;
+      if (disposed || !dirty) return;
+      reflectedCameras.clear();
       renderer.info.reset();
       renderer.render(scene, camera);
+      dirty = false;
       frameCount++;
       allCalls = renderer.info.render.calls;
       mainCalls = meshes + 2;

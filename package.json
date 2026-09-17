@@ -15,6 +15,7 @@
     "prisma:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
     "local:start": "node scripts/local-control.mjs start",
+    "local:dev": "node scripts/local-control.mjs start --dev",
     "local:stop": "node scripts/local-control.mjs stop",
     "local:status": "node scripts/local-control.mjs status",
     "test:api": "node scripts/test-api.mjs",

@@ -13,6 +13,14 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."),
   pidFile = path.join(dir, "stack.json"),
   entry = path.join(root, "scripts/local-stack.mjs");
 const action = process.argv[2] ?? "status";
+const flags = process.argv.slice(3);
+if (
+  flags.some((flag) => flag !== "--dev") ||
+  (flags.length && action !== "start")
+) {
+  console.error("Use start [--dev], stop, or status.");
+  process.exit(1);
+}
 function ownedProcess() {
   try {
     const r = JSON.parse(readFileSync(pidFile, "utf8"));
@@ -30,12 +38,17 @@ function ownedProcess() {
 const record = ownedProcess();
 if (action === "start") {
   if (record) {
-    console.log("Investor Desk is already running. http://localhost:3000");
+    console.log(
+      `Investor Desk is already running (${record.runtime ?? "development"}). http://127.0.0.1:3000`,
+    );
+    console.log(
+      "The running site was left intact. Save any guest work before stopping to change its runtime.",
+    );
     process.exit(0);
   }
   mkdirSync(dir, { recursive: true });
   const log = openSync(path.join(dir, "stack.log"), "a");
-  const child = spawn(process.execPath, [entry], {
+  const child = spawn(process.execPath, [entry, ...flags], {
     cwd: root,
     detached: true,
     stdio: ["ignore", log, log],
@@ -43,8 +56,10 @@ if (action === "start") {
   });
   child.unref();
   closeSync(log);
-  console.log("Starting Investor Desk in the background.");
-  console.log("URL: http://localhost:3000");
+  console.log(
+    `Starting Investor Desk in the background (${flags.includes("--dev") ? "development" : "optimized production build"}).`,
+  );
+  console.log("URL: http://127.0.0.1:3000");
   console.log("Logs: .local/stack.log");
   console.log("Check readiness: npm run local:status");
 } else if (action === "stop") {
@@ -68,7 +83,7 @@ if (action === "start") {
 } else if (action === "status") {
   console.log(
     record
-      ? `Managed stack: running (PID ${record.pid})`
+      ? `Managed stack: running (PID ${record.pid}, ${record.runtime ?? "development"})`
       : "Managed stack: stopped",
   );
   try {

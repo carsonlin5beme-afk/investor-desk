@@ -1,3 +1,9 @@
+import {
+  createJourneyScore,
+  journey,
+  journeyProcessorSource,
+} from "./ambient-journey";
+
 export type AmbientState =
   | "idle"
   | "starting"
@@ -13,193 +19,145 @@ const boundedVolume = (value: number) =>
     ? Math.max(0, Math.min(1, value))
     : initialAmbientVolume;
 
-/** Original, continuously evolving D–A–E–B ambience. No recordings or network. */
-export function createAmbientGraph(context: BaseAudioContext) {
+const modules = new WeakMap<BaseAudioContext, Promise<void>>();
+
+async function loadJourneyProcessor(context: BaseAudioContext) {
+  let pending = modules.get(context);
+  if (!pending) {
+    if (!context.audioWorklet || typeof AudioWorkletNode !== "function")
+      throw new Error("Audio worklets unavailable");
+    const url = URL.createObjectURL(
+      new Blob([journeyProcessorSource], { type: "text/javascript" }),
+    );
+    pending = context.audioWorklet
+      .addModule(url)
+      .finally(() => URL.revokeObjectURL(url));
+    modules.set(context, pending);
+    pending.catch(() => {
+      if (modules.get(context) === pending) modules.delete(context);
+    });
+  }
+  await pending;
+}
+
+/** One bounded, original score on the audio thread; no note timers or song PCM. */
+export async function createAmbientGraph(
+  context: BaseAudioContext,
+  onError: () => void = () => {},
+) {
+  await loadJourneyProcessor(context);
   const nodes: AudioNode[] = [];
-  const sources: AudioScheduledSourceNode[] = [];
   const keep = <T extends AudioNode>(node: T): T => {
     nodes.push(node);
     return node;
   };
-  const start = <T extends AudioScheduledSourceNode>(node: T): T => {
-    sources.push(node);
-    node.start();
-    return node;
-  };
-  const master = keep(context.createGain());
-  master.gain.value = 0;
-  master.connect(context.destination);
-  const bus = keep(context.createGain());
-  const dry = keep(context.createGain());
-  dry.gain.value = 0.7;
-  bus.connect(dry).connect(master);
-
-  // A deterministic, dark stereo impulse: repeatable evidence from this same graph.
-  let seed = 18731;
-  const random = () => {
-    seed = (seed * 16807) % 2147483647;
-    return (seed / 2147483647) * 2 - 1;
-  };
-  const reverb = keep(context.createConvolver());
-  const impulse = context.createBuffer(
-    2,
-    Math.round(context.sampleRate * 5.5),
-    context.sampleRate,
-  );
-  for (let channel = 0; channel < 2; channel++) {
-    const samples = impulse.getChannelData(channel);
-    let smooth = 0;
-    for (let i = 0; i < samples.length; i++) {
-      smooth = smooth * 0.82 + random() * 0.18;
-      samples[i] = smooth * Math.pow(1 - i / samples.length, 2.8);
-    }
-  }
-  reverb.buffer = impulse;
-  const wet = keep(context.createGain());
-  wet.gain.value = 0.52;
-  bus.connect(reverb).connect(wet).connect(master);
-
-  // One slow stereo journey shared by the bed, independent of the sparse stars.
-  const travel = keep(context.createOscillator());
-  travel.frequency.value = 0.008;
-  const travelDepth = keep(context.createGain());
-  travelDepth.gain.value = 0.16;
-  travel.connect(travelDepth);
-  start(travel);
-
-  const frequencies = [73.416, 110, 146.832, 164.814, 220, 246.942, 329.628];
-  frequencies.forEach((frequency, index) => {
-    const tone = keep(context.createOscillator());
-    tone.type = "sine";
-    tone.frequency.value = frequency;
-    tone.detune.value = [-3, 2, 4, -2, 3, -4, 1][index];
-    const level = keep(context.createGain());
-    level.gain.value = index < 3 ? 0.032 : 0.026;
-    const drift = keep(context.createOscillator());
-    drift.frequency.value = 0.013 + index * 0.0043;
-    const depth = keep(context.createGain());
-    depth.gain.value = index < 3 ? 0.009 : 0.012;
-    drift.connect(depth).connect(level.gain);
-    const pan = keep(context.createStereoPanner());
-    pan.pan.value = (index % 2 ? 1 : -1) * (0.12 + index * 0.03);
-    travelDepth.connect(pan.pan);
-    tone.connect(level).connect(pan).connect(bus);
-    start(tone);
-    start(drift);
-  });
-
-  const air = keep(context.createBufferSource());
-  const noise = context.createBuffer(
-    2,
-    Math.round(context.sampleRate * 12),
-    context.sampleRate,
-  );
-  for (let channel = 0; channel < 2; channel++) {
-    const samples = noise.getChannelData(channel);
-    let smooth = 0;
-    for (let i = 0; i < samples.length; i++) {
-      smooth = smooth * 0.94 + random() * 0.06;
-      // A long raised-cosine envelope joins the generated loop at exact zero.
-      const edge = Math.min(
-        1,
-        i / context.sampleRate,
-        (samples.length - 1 - i) / context.sampleRate,
-      );
-      samples[i] = smooth * (0.5 - 0.5 * Math.cos(Math.PI * edge));
-    }
-  }
-  air.buffer = noise;
-  air.loop = true;
-  const airFilter = keep(context.createBiquadFilter());
-  airFilter.type = "bandpass";
-  airFilter.frequency.value = 650;
-  airFilter.Q.value = 0.35;
-  const airLevel = keep(context.createGain());
-  airLevel.gain.value = 0.065;
-  air.connect(airFilter).connect(airLevel).connect(bus);
-  start(air);
-
-  // Authored muted mallets: eight passing stars, with no recurring note timers
-  // or accumulating voices. 64 s at 24 kHz stereo is a fixed 11.72 MiB buffer.
-  const stars = keep(context.createBufferSource());
-  const starRate = 24000;
-  const starBuffer = context.createBuffer(2, 64 * starRate, starRate);
-  const left = starBuffer.getChannelData(0);
-  const right = starBuffer.getChannelData(1);
-  const onsets = [2.4, 8.9, 17.2, 23, 33.8, 41.1, 49.9, 57];
-  const notes = [293.665, 440, 329.628, 493.883, 293.665, 587.33, 440, 329.628];
-  onsets.forEach((onset, index) => {
-    const length = Math.round(1.6 * starRate);
-    const offset = Math.round(onset * starRate);
-    for (let i = 0; i < length; i++) {
-      const time = i / starRate;
-      const attack = 0.5 - 0.5 * Math.cos(Math.PI * Math.min(1, time / 0.02));
-      const tail = Math.min(1, (length - 1 - i) / (starRate * 0.2));
-      const taper = 0.5 - 0.5 * Math.cos(Math.PI * tail);
-      const phase = 2 * Math.PI * notes[index] * time;
-      const sample =
-        0.055 *
-        attack *
-        taper *
-        (Math.sin(phase) * Math.exp(-time / 0.42) +
-          0.09 * Math.sin(phase * 2.76) * Math.exp(-time / 0.11));
-      const progress = i / (length - 1);
-      const pan = index % 2 ? 0.4 - 0.9 * progress : -0.5 + 0.9 * progress;
-      const angle = ((pan + 1) * Math.PI) / 4;
-      left[offset + i] = sample * Math.cos(angle);
-      right[offset + i] = sample * Math.sin(angle);
-    }
-  });
-  stars.buffer = starBuffer;
-  stars.loop = true;
-  const starFilter = keep(context.createBiquadFilter());
-  starFilter.type = "lowpass";
-  starFilter.frequency.value = 1900;
-  starFilter.Q.value = 0.5;
-  stars.connect(starFilter).connect(bus);
-  start(stars);
-
+  let instrument: AudioWorkletNode | null = null;
+  let reverb: ConvolverNode | null = null;
   let disposed = false;
-  return {
-    fadeVolume(value: number, seconds = 0.12) {
-      if (disposed) return;
-      const now = context.currentTime;
-      if (typeof master.gain.cancelAndHoldAtTime === "function")
-        master.gain.cancelAndHoldAtTime(now);
-      else {
-        master.gain.cancelScheduledValues(now);
-        master.gain.setValueAtTime(master.gain.value, now);
-      }
-      master.gain.linearRampToValueAtTime(boundedVolume(value), now + seconds);
-    },
-    dispose() {
-      if (disposed) return;
-      disposed = true;
-      for (const source of sources) {
-        try {
-          source.stop();
-        } catch {
-          /* Already stopped. */
-        }
-      }
-      for (const node of nodes) node.disconnect();
-      air.buffer = null;
-      stars.buffer = null;
-      reverb.buffer = null;
-    },
+  const dispose = () => {
+    if (disposed) return;
+    disposed = true;
+    instrument?.removeEventListener("processorerror", onError);
+    instrument?.port.postMessage("stop");
+    instrument?.port.close();
+    for (const node of nodes) node.disconnect();
+    if (reverb) reverb.buffer = null;
   };
+  try {
+    const master = keep(context.createGain());
+    master.gain.value = 0;
+    master.connect(context.destination);
+    instrument = keep(
+      new AudioWorkletNode(context, "investor-desk-long-way-home-v1", {
+        numberOfInputs: 0,
+        numberOfOutputs: 1,
+        outputChannelCount: [2],
+        processorOptions: { ...journey, notes: createJourneyScore() },
+      }),
+    );
+    instrument.addEventListener("processorerror", onError);
+    const lowCut = keep(context.createBiquadFilter());
+    lowCut.type = "highpass";
+    lowCut.frequency.value = 35;
+    lowCut.Q.value = 0.5;
+    const soften = keep(context.createBiquadFilter());
+    soften.type = "lowpass";
+    soften.frequency.value = 5200;
+    soften.Q.value = 0.5;
+    instrument.connect(lowCut).connect(soften);
+    const dry = keep(context.createGain());
+    dry.gain.value = 0.82;
+    soften.connect(dry).connect(master);
+    reverb = keep(context.createConvolver());
+    // Preserve the authored 24 kHz room while matching ConvolverNode's required
+    // context rate. Retained PCM is 1.46 MiB at 48 kHz (2.93 MiB at 96 kHz).
+    const roomRate = 24000;
+    const room = new Float32Array(roomRate * 4);
+    const impulse = context.createBuffer(
+      2,
+      Math.round(context.sampleRate * 4),
+      context.sampleRate,
+    );
+    let seed = 18731;
+    for (let channel = 0; channel < 2; channel++) {
+      let smooth = 0;
+      for (let i = 0; i < room.length; i++) {
+        seed = (seed * 16807) % 2147483647;
+        smooth = smooth * 0.84 + ((seed / 2147483647) * 2 - 1) * 0.16;
+        const attack = Math.min(1, i / (roomRate * 0.012));
+        room[i] = smooth * attack * Math.pow(1 - i / room.length, 2.8);
+      }
+      const samples = impulse.getChannelData(channel);
+      if (context.sampleRate === roomRate) samples.set(room);
+      else
+        for (let i = 0; i < samples.length; i++) {
+          const position = (i * roomRate) / context.sampleRate;
+          const index = Math.floor(position);
+          const next = index + 1 < room.length ? room[index + 1] : 0;
+          samples[i] = room[index] + (next - room[index]) * (position - index);
+        }
+    }
+    reverb.buffer = impulse;
+    const wet = keep(context.createGain());
+    wet.gain.value = 0.36;
+    soften.connect(reverb).connect(wet).connect(master);
+    return {
+      fadeVolume(value: number, seconds = 0.12) {
+        if (disposed) return;
+        const now = context.currentTime;
+        if (typeof master.gain.cancelAndHoldAtTime === "function")
+          master.gain.cancelAndHoldAtTime(now);
+        else {
+          master.gain.cancelScheduledValues(now);
+          master.gain.setValueAtTime(master.gain.value, now);
+        }
+        master.gain.linearRampToValueAtTime(
+          boundedVolume(value),
+          now + seconds,
+        );
+      },
+      dispose,
+    };
+  } catch (error) {
+    dispose();
+    throw error;
+  }
 }
 
-type AmbientGraph = ReturnType<typeof createAmbientGraph>;
+type AmbientGraph = Awaited<ReturnType<typeof createAmbientGraph>>;
 type EngineDependencies = {
   context: () => AudioContext;
-  graph: (context: BaseAudioContext) => AmbientGraph;
+  graph: (
+    context: BaseAudioContext,
+    onError: () => void,
+  ) => AmbientGraph | Promise<AmbientGraph>;
 };
 
 /** Owns one lazily created context. Audio time handles the sound; timers only finish fades. */
 export class AmbientAudio {
   private context: AudioContext | null = null;
   private graph: AmbientGraph | null = null;
+  private graphTask: Promise<AmbientGraph> | null = null;
   private desired = false;
   private disposed = false;
   private operation = 0;
@@ -237,6 +195,35 @@ export class AmbientAudio {
     }
   };
 
+  private prepareGraph(context: AudioContext) {
+    if (this.graph) return Promise.resolve(this.graph);
+    if (this.graphTask) return this.graphTask;
+    const task = Promise.resolve()
+      .then(() =>
+        this.dependencies.graph(context, () => {
+          if (this.disposed || this.context !== context) return;
+          this.desired = false;
+          this.operation++;
+          this.clearTimers();
+          this.release();
+          this.update("error");
+        }),
+      )
+      .then((graph) => {
+        if (this.disposed || this.context !== context) {
+          graph.dispose();
+          throw new DOMException("Aborted", "AbortError");
+        }
+        this.graph = graph;
+        return graph;
+      })
+      .finally(() => {
+        if (this.graphTask === task) this.graphTask = null;
+      });
+    this.graphTask = task;
+    return task;
+  }
+
   async play() {
     if (this.disposed || this.desired) return;
     const operation = ++this.operation;
@@ -250,7 +237,6 @@ export class AmbientAudio {
         this.context.addEventListener("statechange", this.stateChanged);
       }
       const context = this.context;
-      this.graph ??= this.dependencies.graph(context);
       // This call is synchronous within the user's click/keypress, before any await.
       const resumed = context.resume();
       this.startTimer = setTimeout(() => {
@@ -261,7 +247,7 @@ export class AmbientAudio {
         void context.suspend().catch(() => {});
         this.update("suspended");
       }, 5000);
-      await resumed;
+      await Promise.all([resumed, this.prepareGraph(context)]);
       if (this.disposed || operation !== this.operation) {
         if (!this.desired && context.state === "running")
           await context.suspend();
@@ -273,7 +259,7 @@ export class AmbientAudio {
         this.update("suspended");
         return;
       }
-      this.graph.fadeVolume(this.volume, 1.6);
+      this.graph!.fadeVolume(this.volume, 1.6);
       this.update("playing");
     } catch {
       if (this.disposed || operation !== this.operation) return;
@@ -325,6 +311,7 @@ export class AmbientAudio {
     context?.removeEventListener("statechange", this.stateChanged);
     this.graph?.dispose();
     this.graph = null;
+    this.graphTask = null;
     this.context = null;
     if (context && context.state !== "closed")
       void context.close().catch(() => {});

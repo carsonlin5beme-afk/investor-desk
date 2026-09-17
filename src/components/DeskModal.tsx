@@ -12,6 +12,7 @@ export function DeskModal({
   title,
   kicker,
   close,
+  onDismiss,
   children,
   footer,
   wide = false,
@@ -20,6 +21,7 @@ export function DeskModal({
   title: string;
   kicker: string;
   close: () => void;
+  onDismiss?: () => void;
   children: ReactNode;
   footer?: ReactNode;
   wide?: boolean;
@@ -44,6 +46,7 @@ export function DeskModal({
   }, []);
   function dismiss() {
     if (busy || closing) return;
+    onDismiss?.();
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
       close();
       return;

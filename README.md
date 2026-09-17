@@ -14,12 +14,15 @@ npm run local:start
 npm run local:status
 ```
 
-Open <http://127.0.0.1:3000>. The launcher creates `.env` if missing, starts persistent Postgres 18, generates Prisma, applies migrations, and starts Next.js with hot reload. It refuses to take over occupied ports or migrate an external database. Both services bind to loopback only.
+Open <http://127.0.0.1:3000>. The launcher creates `.env` if missing, starts persistent Postgres 18, generates Prisma, applies migrations, builds the optimized website, then serves it with `next start`. Compilation happens once during startup instead of when visitors open pages. It refuses to take over occupied ports or migrate an external database. Both services bind to loopback only.
 
 ```sh
 npm run local:stop       # Gracefully stop; keeps saved portfolios, clears guest work
 npm run local           # Foreground alternative, Ctrl+C to stop
+npm run local:dev       # Explicit development mode with hot reload (when stopped)
 ```
+
+The optimized site reflects the source at startup. To publish later edits locally, save any temporary guest work, stop the managed stack, then run `local:start` again. `local:dev` keeps hot reload available for development; its first page loads include compilation overhead. Neither start command restarts an existing process or discards its guest workspace.
 
 Startup logs: `.local/stack.log`. Database: `.local/postgres`. Never delete `.local` as a troubleshooting step. Back up the database before upgrades. The app remains loopback-only. Profiles now have password sign-in and server-side ownership checks, but public deployment still needs email verification, password recovery, HTTPS, operational controls, and market-data redistribution approval.
 

@@ -12,6 +12,13 @@ import { fileURLToPath } from "node:url";
 import net from "node:net";
 import EmbeddedPostgres from "embedded-postgres";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const args = process.argv.slice(2);
+if (args.some((arg) => arg !== "--dev"))
+  throw new Error(
+    "Use --dev for hot reload, or no flags for the optimized site.",
+  );
+const development = args.includes("--dev");
+const runtime = development ? "development" : "production";
 process.chdir(root);
 if (!existsSync(".env")) copyFileSync(".env.example", ".env");
 await import("./auth-secret.mjs");
@@ -45,7 +52,8 @@ const portOpen = (port) =>
       resolve(false);
     });
   });
-let dev,
+let web,
+  databaseStartup,
   started = false,
   stopping = false;
 const pg = new EmbeddedPostgres({
@@ -61,29 +69,41 @@ const pg = new EmbeddedPostgres({
   },
   onError: (m) => console.error("[postgres]", m),
 });
-const run = (entry, args) =>
+const run = (entry, args, environment = process.env) =>
   new Promise((resolve, reject) => {
+    if (stopping) return reject(new Error("Startup canceled during shutdown."));
     const p = spawn(process.execPath, [path.join(root, entry), ...args], {
       cwd: root,
       stdio: "inherit",
-      env: process.env,
+      env: environment,
     });
+    web = p;
     p.once("error", reject);
-    p.once("exit", (code) =>
-      code === 0 ? resolve() : reject(new Error(`${entry} exited ${code}`)),
-    );
+    p.once("exit", (code) => {
+      if (stopping) reject(new Error("Startup canceled during shutdown."));
+      else if (code === 0) resolve();
+      else reject(new Error(`${entry} exited ${code}`));
+    });
   });
+const running = (child) =>
+  child &&
+  child.pid != null &&
+  child.exitCode === null &&
+  child.signalCode === null;
 async function shutdown(code = 0) {
   if (stopping) return;
   stopping = true;
-  if (dev && dev.exitCode === null) {
-    dev.kill("SIGTERM");
-    await Promise.race([
-      new Promise((r) => dev.once("exit", r)),
-      new Promise((r) => setTimeout(r, 5000)),
-    ]);
-    if (dev.exitCode === null) dev.kill("SIGKILL");
+  const child = web;
+  if (running(child)) {
+    const exited = new Promise((resolve) => child.once("exit", resolve));
+    child.kill("SIGTERM");
+    const force = setTimeout(() => {
+      if (running(child)) child.kill("SIGKILL");
+    }, 5000);
+    await exited;
+    clearTimeout(force);
   }
+  await databaseStartup?.catch(() => {});
   if (started) await pg.stop().catch(console.error);
   try {
     const record = JSON.parse(readFileSync(pidFile, "utf8"));
@@ -103,18 +123,24 @@ try {
     JSON.stringify({
       pid: process.pid,
       root,
+      runtime,
       startedAt: new Date().toISOString(),
     }),
   );
-  const version = path.join(root, ".local", "postgres", "PG_VERSION");
-  if (existsSync(version)) {
-    if (readFileSync(version, "utf8").trim() !== "18")
-      throw new Error(
-        "Existing database is not Postgres 18. Back up and migrate it before using this launcher.",
-      );
-  } else await pg.initialise();
-  await pg.start();
-  started = true;
+  databaseStartup = (async () => {
+    const version = path.join(root, ".local", "postgres", "PG_VERSION");
+    if (existsSync(version)) {
+      if (readFileSync(version, "utf8").trim() !== "18")
+        throw new Error(
+          "Existing database is not Postgres 18. Back up and migrate it before using this launcher.",
+        );
+    } else await pg.initialise();
+    if (stopping) throw new Error("Startup canceled during shutdown.");
+    await pg.start();
+    started = true;
+  })();
+  await databaseStartup;
+  if (stopping) throw new Error("Startup canceled during shutdown.");
   const client = pg.getPgClient("postgres", "127.0.0.1");
   await client.connect();
   const check = await client.query(
@@ -124,12 +150,22 @@ try {
   await client.end();
   await run("node_modules/prisma/build/index.js", ["generate"]);
   await run("node_modules/prisma/build/index.js", ["migrate", "deploy"]);
-  console.log("Starting Investor Desk at http://localhost:3000");
-  dev = spawn(
+  if (!development) {
+    console.log(
+      "Preparing the optimized website. Pages will be compiled before visitors open them.",
+    );
+    await run("node_modules/next/dist/bin/next", ["build"], {
+      ...process.env,
+      NODE_ENV: "production",
+    });
+  }
+  if (stopping) throw new Error("Startup canceled during shutdown.");
+  console.log(`Starting Investor Desk (${runtime}) at http://127.0.0.1:3000`);
+  web = spawn(
     process.execPath,
     [
       path.join(root, "node_modules/next/dist/bin/next"),
-      "dev",
+      development ? "dev" : "start",
       "--hostname",
       "127.0.0.1",
       "--port",
@@ -138,14 +174,14 @@ try {
     {
       cwd: root,
       stdio: "inherit",
-      env: { ...process.env, NODE_ENV: "development" },
+      env: { ...process.env, NODE_ENV: runtime },
     },
   );
-  dev.once("error", (e) => {
+  web.once("error", (e) => {
     console.error(e);
     void shutdown(1);
   });
-  dev.once("exit", (code) => {
+  web.once("exit", (code) => {
     if (!stopping) void shutdown(code ?? 1);
   });
 } catch (e) {

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { AmbientRadioControls } from "@/components/AmbientRadio";
+import { AmbientRadioOrb } from "@/components/AmbientRadio";
 import { BrandWordmark } from "@/components/Brand";
 import {
   ArrowDown,
@@ -47,7 +47,7 @@ export function LandingPage() {
         <Link href="/sign-in" className={styles.headerCta}>
           Sign in
         </Link>
-        <AmbientRadioControls />
+        <AmbientRadioOrb />
       </header>
       <main id="main">
         <section
