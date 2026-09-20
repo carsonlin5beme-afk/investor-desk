@@ -1,0 +1,10 @@
+.deleteButton:global(.button) {
+  background: #40252d;
+  color: #f3cbd3;
+  border-color: #80525d;
+}
+
+.deleteButton:global(.button):hover:not(:disabled) {
+  background: #56313c;
+  border-color: #b47788;
+}

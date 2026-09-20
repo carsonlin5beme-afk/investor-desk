@@ -1,3 +1,5 @@
+import { createAsteroidImpactPlayer } from "./asteroid-impact-audio";
+import { createBlastLaunchPlayer } from "./blast-launch-audio";
 import {
   createJourneyScore,
   journey,
@@ -20,6 +22,7 @@ const boundedVolume = (value: number) =>
     : initialAmbientVolume;
 
 const modules = new WeakMap<BaseAudioContext, Promise<void>>();
+const noImpact = () => {};
 
 async function loadJourneyProcessor(context: BaseAudioContext) {
   let pending = modules.get(context);
@@ -53,11 +56,21 @@ export async function createAmbientGraph(
   };
   let instrument: AudioWorkletNode | null = null;
   let reverb: ConvolverNode | null = null;
+  let impacts: ReturnType<typeof createAsteroidImpactPlayer> | null = null;
+  let launches: ReturnType<typeof createBlastLaunchPlayer> | null = null;
+  let clock: { positionFrames: number; contextFrame: number } | null = null;
+  const loopFrames = Math.round(journey.seconds * context.sampleRate);
   let disposed = false;
   const dispose = () => {
     if (disposed) return;
     disposed = true;
+    impacts?.dispose();
+    impacts = null;
+    launches?.dispose();
+    launches = null;
+    clock = null;
     instrument?.removeEventListener("processorerror", onError);
+    if (instrument) instrument.port.onmessage = null;
     instrument?.port.postMessage("stop");
     instrument?.port.close();
     for (const node of nodes) node.disconnect();
@@ -76,6 +89,25 @@ export async function createAmbientGraph(
       }),
     );
     instrument.addEventListener("processorerror", onError);
+    instrument.port.onmessage = (event: MessageEvent) => {
+      const data = event.data;
+      if (
+        disposed ||
+        !data ||
+        data.type !== "journey-clock" ||
+        !Number.isSafeInteger(data.positionFrames) ||
+        !Number.isSafeInteger(data.contextFrame) ||
+        data.positionFrames < 0 ||
+        data.positionFrames >= loopFrames ||
+        data.contextFrame < 0 ||
+        (clock && data.contextFrame < clock.contextFrame)
+      )
+        return;
+      clock = {
+        positionFrames: data.positionFrames,
+        contextFrame: data.contextFrame,
+      };
+    };
     const lowCut = keep(context.createBiquadFilter());
     lowCut.type = "highpass";
     lowCut.frequency.value = 35;
@@ -121,7 +153,31 @@ export async function createAmbientGraph(
     const wet = keep(context.createGain());
     wet.gain.value = 0.36;
     soften.connect(reverb).connect(wet).connect(master);
+    // Prepare bounded impact and chord-matched launch caches before playback.
+    // Both bake in their own tails, bypass the music reverb and share its master.
+    impacts = createAsteroidImpactPlayer(context, master);
+    launches = createBlastLaunchPlayer(context, master);
     return {
+      playLaunch() {
+        if (disposed || !clock) return noImpact;
+        const framesSinceAnchor =
+          context.currentTime * context.sampleRate - clock.contextFrame;
+        if (framesSinceAnchor < 0) return noImpact;
+        // Audio time pauses with the score; message delivery time is irrelevant.
+        const elapsed =
+          ((clock.positionFrames + framesSinceAnchor) % loopFrames) /
+          context.sampleRate;
+        return launches?.play(elapsed) ?? noImpact;
+      },
+      cancelLaunch() {
+        launches?.cancel();
+      },
+      playImpact(gold: boolean) {
+        return disposed ? noImpact : (impacts?.play(gold) ?? noImpact);
+      },
+      cancelImpact() {
+        impacts?.cancel();
+      },
       fadeVolume(value: number, seconds = 0.12) {
         if (disposed) return;
         const now = context.currentTime;
@@ -144,7 +200,14 @@ export async function createAmbientGraph(
   }
 }
 
-type AmbientGraph = Awaited<ReturnType<typeof createAmbientGraph>>;
+type AmbientGraph = {
+  fadeVolume: (value: number, seconds?: number) => void;
+  dispose: () => void;
+  playImpact?: (gold: boolean) => () => void;
+  cancelImpact?: () => void;
+  playLaunch?: () => () => void;
+  cancelLaunch?: () => void;
+};
 type EngineDependencies = {
   context: () => AudioContext;
   graph: (
@@ -175,6 +238,10 @@ export class AmbientAudio {
   ) {}
 
   private update(state: AmbientState) {
+    if (state !== "playing") {
+      this.cancelImpact();
+      this.cancelLaunch();
+    }
     this.state = state;
     if (!this.disposed) this.notify(state);
   }
@@ -296,8 +363,60 @@ export class AmbientAudio {
     }, 340);
   }
 
+  /** An impact can borrow confirmed playback; it never starts or resumes audio. */
+  playImpact(gold: boolean): () => void {
+    if (
+      this.disposed ||
+      !this.desired ||
+      this.state !== "playing" ||
+      this.context?.state !== "running" ||
+      this.volume <= 0 ||
+      (typeof document !== "undefined" &&
+        document.visibilityState !== "visible")
+    )
+      return noImpact;
+    try {
+      return this.graph?.playImpact?.(gold === true) ?? noImpact;
+    } catch {
+      this.cancelImpact();
+      return noImpact;
+    }
+  }
+
+  cancelImpact() {
+    this.graph?.cancelImpact?.();
+  }
+
+  /** A launch borrows the current chord and playback; it never starts audio. */
+  playLaunch(): () => void {
+    if (
+      this.disposed ||
+      !this.desired ||
+      this.state !== "playing" ||
+      this.context?.state !== "running" ||
+      this.volume <= 0 ||
+      (typeof document !== "undefined" &&
+        document.visibilityState !== "visible")
+    )
+      return noImpact;
+    try {
+      return this.graph?.playLaunch?.() ?? noImpact;
+    } catch {
+      this.cancelLaunch();
+      return noImpact;
+    }
+  }
+
+  cancelLaunch() {
+    this.graph?.cancelLaunch?.();
+  }
+
   setVolume(value: number) {
     this.volume = boundedVolume(value);
+    if (this.volume === 0) {
+      this.cancelImpact();
+      this.cancelLaunch();
+    }
     if (
       this.desired &&
       this.context?.state === "running" &&
@@ -309,6 +428,8 @@ export class AmbientAudio {
   private release() {
     const context = this.context;
     context?.removeEventListener("statechange", this.stateChanged);
+    this.cancelImpact();
+    this.cancelLaunch();
     this.graph?.dispose();
     this.graph = null;
     this.graphTask = null;

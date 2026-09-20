@@ -1,3 +1,7 @@
+import {
+  isManualOptionSymbol,
+  MANUAL_OPTION_SOURCE,
+} from "@/lib/manual-options";
 import { AssetClass } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { finitePrice, quoteTime } from "@/server/providers/alpaca-client";
@@ -26,6 +30,8 @@ export const getQuoteResult = async (
   assetClass: AssetClass,
   force = false,
 ): Promise<QuoteResult> => {
+  if (isManualOptionSymbol(symbol))
+    return { quote: null, refreshFailed: false };
   const expectedSource = quoteSourceFor(assetClass);
   const key = `${expectedSource}:${assetClass}:${symbol}:${force ? "fresh" : "cached"}`;
   if (pending.has(key)) return pending.get(key)!;

@@ -2,7 +2,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { env } from "@/lib/env";
 import { decideFill, estimateOrderNotional } from "@/server/domain/fill-engine";
-import { OrderTicket, MarketQuote } from "@/server/domain/types";
+import { OrderTicket, MarketQuote, FillDecision } from "@/server/domain/types";
 import { isQuoteStale } from "@/server/domain/staleness";
 import { decodeContract } from "@/server/providers/demo";
 import { assertOptionNotExpired } from "@/lib/option-expiration";
@@ -15,19 +15,35 @@ import {
   closedSessionEligibility,
   executionAuditNote,
 } from "./closed-session-simulation";
+import {
+  isManualOptionSymbol,
+  parseManualOptionSymbol,
+  validateManualOptionTicket,
+  MANUAL_OPTION_SOURCE,
+} from "@/lib/manual-options";
+const optionTerms = (symbol: string) =>
+  isManualOptionSymbol(symbol)
+    ? parseManualOptionSymbol(symbol)
+    : decodeContract(symbol);
 const D = Prisma.Decimal;
 export function assertExecutionCurrent(
   ticket: OrderTicket,
-  quote: MarketQuote,
+  quote: MarketQuote | null,
   closedSession: ClosedSessionBasis | null,
 ) {
+  const manual = validateManualOptionTicket(ticket);
+  if (manual) {
+    assertOptionNotExpired(manual.expiration, manual.underlying);
+    return;
+  }
+  if (!quote) throw new Error("A provider quote is required.");
   assertClosedSessionCurrent(closedSession);
   if (ticket.assetClass === "OPTION") {
     if (optionDeliverableUnverified(quote.source))
       throw new Error(
         "Standard deliverable unverified. Tradier contract prices remain visible, but new simulated fills are unavailable with this source.",
       );
-    const meta = decodeContract(ticket.optionContractSymbol!);
+    const meta = optionTerms(ticket.optionContractSymbol!);
     assertOptionNotExpired(meta.expiration, meta.underlying);
   }
   if (
@@ -41,12 +57,22 @@ export function assertExecutionCurrent(
     );
 }
 export async function resolveTicket(ticket: OrderTicket, execute = false) {
+  const manual = validateManualOptionTicket(ticket);
+  if (manual) {
+    assertOptionNotExpired(manual.expiration, manual.underlying);
+    return {
+      symbol: manual.symbol,
+      quote: null,
+      decision: { fillable: true, fillPrice: manual.premium } as FillDecision,
+      closedSession: null,
+    };
+  }
   const symbol =
     ticket.assetClass === "OPTION"
       ? ticket.optionContractSymbol!
       : ticket.symbol;
   if (ticket.assetClass === "OPTION") {
-    const meta = decodeContract(symbol);
+    const meta = optionTerms(symbol);
     if (
       meta.underlying !== ticket.symbol ||
       meta.right !== ticket.optionRight ||
@@ -144,6 +170,12 @@ async function checkAccount(
     throw new Error(
       "Cannot sell more than the quantity owned. Short selling is disabled.",
     );
+  if (
+    ticket.optionPricing === "MANUAL" &&
+    ticket.side === "BUY" &&
+    (position?.quantity.toNumber() ?? 0) + ticket.quantity > 1e9
+  )
+    throw new Error("A manual holding cannot exceed one billion contracts.");
   // Permit only a full close of a sub-cent residual, with proceeds rounded to cents.
   if (
     notional < 0.01 &&
@@ -188,6 +220,10 @@ async function replay(tx: Prisma.TransactionClient, ticket: OrderTicket) {
   });
   if (!order) return null;
   if (
+    (order.quoteSource === MANUAL_OPTION_SOURCE) !==
+      (ticket.optionPricing === "MANUAL") ||
+    (ticket.optionPricing === "MANUAL" &&
+      order.fills[0]?.price.toNumber() !== ticket.manualPremium) ||
     order.portfolioId !== ticket.portfolioId ||
     order.symbol !== ticket.symbol ||
     order.side !== ticket.side ||
@@ -225,6 +261,7 @@ async function replay(tx: Prisma.TransactionClient, ticket: OrderTicket) {
   };
 }
 export const executeOrder = async (ticket: OrderTicket) => {
+  validateManualOptionTicket(ticket);
   const previous = await replay(prisma, ticket);
   if (previous) return previous;
   const { symbol, quote, decision, closedSession } = await resolveTicket(
@@ -259,7 +296,7 @@ export const executeOrder = async (ticket: OrderTicket) => {
       const order = await tx.order.create({
         data: {
           clientOrderId: ticket.clientOrderId,
-          quoteSource: quote.source,
+          quoteSource: quote?.source ?? MANUAL_OPTION_SOURCE,
           portfolioId: portfolio.id,
           assetClass: ticket.assetClass,
           symbol: ticket.symbol,
@@ -273,7 +310,7 @@ export const executeOrder = async (ticket: OrderTicket) => {
           optionStrike: ticket.optionStrike,
           optionExpiration:
             ticket.assetClass === "OPTION"
-              ? decodeContract(symbol).expiration
+              ? optionTerms(symbol).expiration
               : undefined,
           filledAt: new Date(),
         },
@@ -291,6 +328,7 @@ export const executeOrder = async (ticket: OrderTicket) => {
             symbol,
             quote,
             closedSession,
+            ticket.manualPremium,
           ),
         },
       });
@@ -330,7 +368,7 @@ export const executeOrder = async (ticket: OrderTicket) => {
             },
           });
         if (ticket.assetClass === "OPTION") {
-          const meta = decodeContract(symbol);
+          const meta = optionTerms(symbol);
           await tx.optionPositionDetails.upsert({
             where: { positionId: position.id },
             create: {
@@ -364,7 +402,7 @@ export const executeOrder = async (ticket: OrderTicket) => {
         fillPrice,
         notional,
         replayed: false,
-        quoteSource: quote.source,
+        quoteSource: quote?.source ?? MANUAL_OPTION_SOURCE,
         ...auditQuoteMetadata(
           executionAuditNote(
             ticket.side,
@@ -372,6 +410,7 @@ export const executeOrder = async (ticket: OrderTicket) => {
             symbol,
             quote,
             closedSession,
+            ticket.manualPremium,
           ),
         ),
       };

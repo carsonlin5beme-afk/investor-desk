@@ -2,16 +2,19 @@
 import { useState } from "react";
 import { type Holding, money } from "@/lib/desk-types";
 import { Segmented } from "./Controls";
+import { ArrowUpRight } from "lucide-react";
 export function Allocation({
   holdings,
   cash,
   filter,
   onFilter,
+  onNewOrder,
 }: {
   holdings: Holding[];
   cash: number;
   filter: string;
   onFilter: (value: string) => void;
+  onNewOrder?: () => void;
 }) {
   const [basis, setBasis] = useState<"current" | "target">("current"),
     [view, setView] = useState<"assets" | "companies">("assets");
@@ -69,10 +72,12 @@ export function Allocation({
   let offset = 0;
   const invested = total ? Math.round(((total - cash) / total) * 100) : 0;
   return (
-    <section className="panel allocation-panel">
+    <section
+      className="panel allocation-panel"
+      data-wide-values={groups.some((g) => money(g.value, 0).length > 12)}
+    >
       <div className="section-heading">
         <div>
-          <span className="eyebrow">A balanced perspective</span>
           <h2>Capital allocation</h2>
         </div>
       </div>
@@ -171,6 +176,15 @@ export function Allocation({
           ? "Concentration by market value, combining stock and options on each underlying. This is not delta exposure."
           : "Select a segment or legend row to explore its holdings."}
       </p>
+      {onNewOrder && (
+        <button
+          className="button primary allocation-order"
+          onClick={onNewOrder}
+        >
+          New order
+          <ArrowUpRight size={18} />
+        </button>
+      )}
     </section>
   );
 }

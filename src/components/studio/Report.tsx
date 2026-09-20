@@ -518,14 +518,19 @@ export function Report({
                             : h.symbol}
                           <small>
                             {portfolioNames.get(h.portfolioId)} ·{" "}
-                            {h.projection.quoteSource}
+                            {h.projection.quoteSource === "manual"
+                              ? "Manual entry"
+                              : h.projection.quoteSource}
                             {h.projection.priceEstimated
                               ? " · cost-basis estimate"
                               : h.projection.valuationBasis ===
                                   "OPTION_MIDPOINT"
                                 ? " · midpoint estimate"
                                 : ""}
-                            {h.projection.quoteStale ? " · stale" : ""}
+                            {h.projection.quoteStale &&
+                            h.projection.quoteSource !== "manual"
+                              ? " · stale"
+                              : ""}
                             {h.projection.expirationAssumed
                               ? " · assumed expiry time"
                               : ""}

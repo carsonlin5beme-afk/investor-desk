@@ -17,6 +17,10 @@ const audio = vi.hoisted(() => ({
   pause: vi.fn(),
   dispose: vi.fn(),
   volume: vi.fn(),
+  impact: vi.fn(() => () => {}),
+  cancelImpact: vi.fn(),
+  launch: vi.fn(() => () => {}),
+  cancelLaunch: vi.fn(),
 }));
 vi.mock("@/lib/ambient-audio", () => ({
   initialAmbientVolume: 0.2,
@@ -29,6 +33,10 @@ vi.mock("@/lib/ambient-audio", () => ({
     pause = audio.pause;
     dispose = audio.dispose;
     setVolume = audio.volume;
+    playImpact = audio.impact;
+    cancelImpact = audio.cancelImpact;
+    playLaunch = audio.launch;
+    cancelLaunch = audio.cancelLaunch;
   },
 }));
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });

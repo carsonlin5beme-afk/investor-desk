@@ -23,7 +23,34 @@ import {
 import { ValueChart } from "./ValueChart";
 import { Segmented, SaveState } from "./Controls";
 import type { WorkspaceController } from "./useWorkspace";
-export function ScenarioStudio({
+import { MonthlyScenario } from "./MonthlyScenario";
+
+export function ScenarioStudio(props: {
+  portfolios: Portfolio[];
+  workspace: WorkspaceController;
+}) {
+  const [view, setView] = useState<"monthly" | "targets">("monthly");
+  return (
+    <div>
+      <Segmented
+        label="Scenario studio view"
+        value={view}
+        options={[
+          { value: "monthly", label: "Monthly" },
+          { value: "targets", label: "Target progress" },
+        ]}
+        onChange={setView}
+      />
+      {view === "monthly" ? (
+        <MonthlyScenario key={props.workspace.identity} {...props} />
+      ) : (
+        <TargetScenarioStudio {...props} />
+      )}
+    </div>
+  );
+}
+
+function TargetScenarioStudio({
   portfolios,
   workspace,
 }: {
@@ -102,7 +129,7 @@ export function ScenarioStudio({
         <div>
           <span className="eyebrow">A place for a different possibility</span>
           <h2>
-            Scenario studio<span className="heading-dot">.</span>
+            Target progress<span className="heading-dot">.</span>
           </h2>
           <p className="muted">
             Save a snapshot. Change the assumptions. Compare the whole picture.

@@ -39,6 +39,14 @@ export function quoteStatus(input: {
     blocking = false,
     connectionRequired = false,
   ) => ({ code, label, message, blocking, connectionRequired });
+  if (input.source === "manual")
+    return status(
+      "MANUAL",
+      "Manual entry · cost-basis estimate",
+      "Current market price is unavailable. Manual trades use your entered premium; scenario values are model estimates.",
+      true,
+      false,
+    );
   if (input.source === "demo") {
     if (input.sampleSupported === false || !input.hasQuote)
       return status(

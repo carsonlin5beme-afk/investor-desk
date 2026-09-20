@@ -1,4 +1,5 @@
 import { createPortfolioSchema } from "@/server/api/schemas";
+import { portfolioDeleteSchema } from "@/lib/portfolio-delete";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { currentProfile } from "@/server/auth/access";
@@ -118,7 +119,12 @@ async function stream(request: Request, key: string, id: string) {
               stop();
               return;
             }
-            const p = ownedPortfolio(state, id);
+            const p = state.portfolios.find((portfolio) => portfolio.id === id);
+            // Deletion is terminal for this stream; provider failures may retry.
+            if (!p) {
+              stop();
+              return;
+            }
             for (const position of p.positions) {
               if (closed) return;
               const quote = await getLiveQuote(
@@ -244,6 +250,22 @@ export async function guestResponse(
         const id = decodeURIComponent(match[1]),
           part = match[2],
           p = ownedPortfolio(active, id);
+        if (!part && method === "DELETE") {
+          const input = portfolioDeleteSchema.safeParse(
+            await request.json().catch(() => null),
+          );
+          if (!input.success)
+            throw new GuestError("Confirm the portfolio you want to delete.");
+          if (input.data.name !== p.name)
+            throw new GuestError(
+              "This portfolio was renamed. Reopen it and confirm again.",
+              409,
+            );
+          active.portfolios = active.portfolios.filter(
+            (item) => item.id !== id,
+          );
+          return json({ deletedId: id });
+        }
         if (!part && method === "PATCH") {
           const body = await request.json();
           if (

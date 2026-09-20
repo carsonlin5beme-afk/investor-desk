@@ -20,6 +20,8 @@ export interface MarketQuote {
 }
 
 export interface OrderTicket {
+  optionPricing?: "PROVIDER" | "MANUAL";
+  manualPremium?: number;
   closedSessionPreview?: ClosedSessionBasis;
   clientOrderId?: string;
   portfolioId: string;

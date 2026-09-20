@@ -21,6 +21,889 @@
   margin: 0;
 }
 
+/* The chosen dashboard concept: two clear headline cards and compact panels. */
+.populated :global(.desk-content) {
+  padding-top: 24px;
+}
+
+.populated .overviewHeading {
+  margin-bottom: 20px;
+}
+
+.populated .overviewHeading h1 {
+  font-size: clamp(24px, 2.5vw, 36px);
+}
+
+.dashboard .overviewCards:global(.net-worth-hero) {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 20px;
+  align-items: stretch;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  overflow: visible;
+}
+
+.dashboard .overviewCards::before,
+.dashboard .overviewCards::after {
+  display: none;
+}
+
+.currentPanel,
+.targetPanel {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  min-width: 0;
+  min-height: 220px;
+  padding: 28px 30px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--surface-soft), var(--surface) 75%);
+}
+
+.dashboard .currentPanel {
+  border-color: color-mix(in srgb, var(--green) 75%, var(--line));
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--green) 32%, transparent),
+    0 0 20px color-mix(in srgb, var(--green) 7%, transparent);
+}
+
+.currentPanel::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  pointer-events: none;
+  top: 8%;
+  right: -29%;
+  width: 75%;
+  aspect-ratio: 1;
+  background: url("/images/dashboard/sage-moon.webp") center / contain no-repeat;
+  opacity: 0.38;
+  mask-image: linear-gradient(90deg, transparent, #000 28%);
+  transform-origin: center;
+  animation: portfolio-planet-orbit 96s linear infinite;
+}
+
+/* A slow, shallow orbit of the artwork; financial readouts stay stationary. */
+@keyframes portfolio-planet-orbit {
+  0% {
+    transform: translate(0, 0) rotate(0deg);
+  }
+  25% {
+    transform: translate(-2%, -1%) rotate(90deg);
+  }
+  50% {
+    transform: translate(0, -2%) rotate(180deg);
+  }
+  75% {
+    transform: translate(2%, -1%) rotate(270deg);
+  }
+  100% {
+    transform: translate(0, 0) rotate(360deg);
+  }
+}
+
+.currentPanel :global(.eyebrow),
+.targetPanel > :global(.eyebrow) {
+  position: relative;
+  display: block;
+  max-width: 100%;
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+}
+
+.dashboard .currentPanel :global(.current-value) {
+  font-size: min(clamp(2.25rem, 16cqi, 4.75rem), var(--value-fit, 100cqi));
+  margin: 18px 0 17px;
+  white-space: nowrap;
+}
+
+.dashboard .targetPanel :global(.hero-value) {
+  font-size: min(clamp(2rem, 16cqi, 4.25rem), var(--value-fit, 100cqi));
+  margin: 18px 0 10px;
+  white-space: nowrap;
+}
+
+/* Only the leading balance receives a distinct, directional edge light. */
+:global(:root[data-theme="dark"]) .dashboard .currentPanel {
+  background:
+    radial-gradient(ellipse at 0 0, #91d9b709, transparent 60%), var(--surface);
+  border-color: #34534e;
+  border-top-color: #91d9b7ad;
+  border-left-color: #91d9b780;
+  box-shadow:
+    inset 0 1px 0 #c6f2dc0a,
+    -6px -6px 28px -18px #91d9b74d;
+}
+
+:global(:root[data-theme="dark"]) .dashboard .targetPanel {
+  background: #071018;
+  border-color: var(--line);
+  border-top-color: #2e454d;
+}
+
+:global(:root[data-theme="dark"]) .currentPanel::before {
+  opacity: 0.32;
+}
+
+:global(:root[data-theme="dark"]) .currentPanel :global(.eyebrow),
+:global(:root[data-theme="dark"]) .targetPanel > :global(.eyebrow) {
+  color: #b8cbd5;
+  font-size: 13px;
+  font-weight: 500;
+  -webkit-text-stroke: 0.35px currentColor;
+}
+
+:global(:root[data-theme="dark"]) .populated :global(.metric-card),
+:global(:root[data-theme="dark"]) .populated :global(.trajectory),
+:global(:root[data-theme="dark"]) .populated :global(.allocation-panel) {
+  background: var(--surface);
+  border-color: var(--line);
+  border-top-color: #2b414b;
+  box-shadow: inset 0 1px 0 #b7d8ea05;
+}
+
+.orbitAccent {
+  position: absolute;
+  right: -35px;
+  bottom: -24px;
+  width: 180px;
+  height: 180px;
+  border: 1px solid color-mix(in srgb, var(--green) 18%, transparent);
+  border-radius: 50%;
+  opacity: 0.45;
+  pointer-events: none;
+  z-index: -1;
+  background:
+    radial-gradient(circle, var(--green) 0 3px, transparent 4px),
+    repeating-radial-gradient(
+      circle,
+      transparent 0 28px,
+      color-mix(in srgb, var(--green) 22%, transparent) 29px 30px,
+      transparent 31px 50px
+    );
+}
+
+.dashboard .targetPanel :global(.hero-aside) {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  width: fit-content;
+  max-width: 100%;
+  border: 0;
+  border-radius: 6px;
+  padding: 5px 6px;
+  margin: 12px 0 -6px -6px;
+}
+
+.dashboard .targetPanel :global(.hero-aside) > svg {
+  width: 16px;
+  height: 16px;
+}
+
+.dashboard .targetPanel :global(.hero-aside) > strong,
+.dashboard .targetPanel :global(.hero-aside) > strong > span {
+  font-family: var(--font-numeric);
+  font-size: 13px;
+}
+
+.dashboard .targetPanel :global(.coverage-track) {
+  display: none;
+}
+
+.populated :global(.metrics-grid) {
+  gap: 20px;
+}
+
+.populated :global(.metric-card) {
+  padding: 20px 23px;
+  background: linear-gradient(135deg, var(--surface-soft), var(--surface) 80%);
+}
+
+.populated :global(.metric-card:focus-visible) {
+  outline-offset: 4px;
+}
+
+.populated :global(.chart-grid) {
+  grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+  gap: 20px;
+  align-items: stretch;
+}
+
+.populated :global(.trajectory),
+.populated :global(.allocation-panel) {
+  min-width: 0;
+  padding: 25px;
+  background: linear-gradient(150deg, var(--surface-soft), var(--surface) 75%);
+}
+
+.populated :global(.section-heading h2) {
+  font-size: 20px;
+  margin: 0;
+}
+
+.populated :global(.trajectory .section-heading) {
+  margin-bottom: 6px;
+}
+
+.populated :global(.chart-headline) {
+  container-type: inline-size;
+  margin: 10px 0 12px;
+}
+
+.populated :global(.chart-headline > strong) {
+  font-size: min(clamp(2rem, 3.5vw, 3.25rem), var(--value-fit, 100cqi));
+  max-width: 100%;
+  white-space: nowrap;
+}
+
+.populated :global(.chart-context) {
+  margin-top: 12px;
+}
+
+.populated :global(.allocation-panel) {
+  display: grid;
+  grid-template-columns: minmax(140px, 0.9fr) minmax(0, 1.1fr);
+  gap: 14px 12px;
+  align-content: start;
+  align-items: center;
+}
+
+.populated :global(.allocation-panel) > :global(.section-heading),
+.populated :global(.allocation-panel) > :global(.segmented),
+.populated :global(.allocation-footer),
+.populated :global(.allocation-panel) > :global(.fine-print),
+.populated :global(.allocation-order) {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.populated :global(.allocation-visual),
+.populated :global(.allocation-legend) {
+  min-width: 0;
+  margin: 8px 0;
+  grid-row: auto;
+}
+
+.populated :global(.allocation-visual) {
+  grid-column: 1;
+}
+
+.populated :global(.allocation-visual svg) {
+  width: 100%;
+  height: auto;
+  max-width: 210px;
+}
+
+.populated :global(.allocation-legend) {
+  grid-column: 2;
+}
+
+.populated :global(.allocation-legend > button) {
+  flex-wrap: wrap;
+  gap: 3px 8px;
+  padding: 10px 5px;
+}
+
+.populated :global(.allocation-legend > button > span) {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+}
+
+.populated :global(.allocation-legend strong) {
+  display: block;
+  flex: 0 0 calc(100% - 15px);
+  margin-left: 15px;
+  font-size: 19px;
+  overflow-wrap: anywhere;
+}
+
+.populated :global(.allocation-footer) {
+  padding-top: 8px;
+  gap: 4px 10px;
+}
+
+.populated :global(.allocation-footer .text-button) {
+  font-size: 10px;
+}
+
+.populated :global(.allocation-order) {
+  width: 100%;
+  justify-content: center;
+  min-height: 48px;
+  margin-top: 6px;
+}
+
+/* Give unusually long balances a full row rather than breaking their digits. */
+.populated
+  :global(.allocation-panel[data-wide-values="true"] .allocation-visual) {
+  grid-column: 1 / -1;
+  justify-self: center;
+  width: 180px;
+}
+
+.populated
+  :global(.allocation-panel[data-wide-values="true"] .allocation-legend) {
+  grid-column: 1 / -1;
+}
+
+.populated
+  :global(
+    .allocation-panel[data-wide-values="true"] .allocation-legend > button
+  ) {
+  flex-wrap: wrap;
+}
+
+.populated
+  :global(
+    .allocation-panel[data-wide-values="true"] .allocation-legend strong
+  ) {
+  flex-basis: calc(100% - 15px);
+  margin-left: 15px;
+  white-space: nowrap;
+}
+
+/* The sphere lives below the portfolios; its flight fades softly behind
+   the last visible row while navigation remains in front. */
+.sidebar:global(.sidebar) {
+  isolation: isolate;
+  flex-flow: column nowrap;
+  align-items: stretch;
+  gap: 0;
+  overflow-x: hidden;
+}
+.sidebar > * {
+  flex-shrink: 0;
+}
+.sidebarNavigation {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.sidebarNavigation > * {
+  flex-shrink: 0;
+}
+.sidebar :global(.workspace-label) {
+  display: block;
+}
+.sidebar :global(.nav-section-label) {
+  display: flex;
+}
+.sidebar :global(.portfolio-nav) {
+  display: block;
+  order: 0;
+  flex: 0 1 auto;
+  min-height: 50px;
+  max-height: 30vh;
+  width: 100%;
+  overflow: auto;
+}
+.sidebar :global(.portfolio-nav > .nav-item) {
+  min-width: 0;
+  width: 100%;
+}
+.sidebar :global(.portfolio-nav):empty {
+  min-height: 0;
+}
+.sidebar :global(.sidebar-bottom) {
+  position: relative;
+  z-index: 1;
+  margin-top: 0;
+  padding-top: 0;
+}
+.sidebarStars {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 9% 16%, #c6f2dc4d 0 0.7px, transparent 1.2px),
+    radial-gradient(circle at 88% 25%, #c6f2dc38 0 0.5px, transparent 1px),
+    radial-gradient(circle at 19% 39%, #c6f2dc40 0 0.6px, transparent 1.1px),
+    radial-gradient(circle at 94% 47%, #c6f2dc4d 0 0.7px, transparent 1.2px),
+    radial-gradient(circle at 12% 62%, #c6f2dc33 0 0.5px, transparent 1px),
+    radial-gradient(circle at 73% 69%, #c6f2dc45 0 0.65px, transparent 1.1px),
+    radial-gradient(circle at 27% 79%, #c6f2dc52 0 0.7px, transparent 1.2px),
+    radial-gradient(circle at 90% 88%, #c6f2dc38 0 0.5px, transparent 1px);
+}
+.signalBeacon {
+  --signal-orb-size: 24px;
+  --signal-rise: 0px;
+  position: relative;
+  z-index: 0;
+  align-self: center;
+  flex: 1 0 76px;
+  min-height: 76px;
+  width: 48px;
+  margin: 12px auto 20px;
+  pointer-events: none;
+}
+.signalLine {
+  position: absolute;
+  inset: calc(-1 * var(--signal-rise)) auto calc(var(--signal-orb-size) / 2)
+    calc(50% - 20px);
+  width: 40px;
+  overflow: visible;
+  mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    #0000000d 20px,
+    #00000059 48px,
+    #000000b3 72px,
+    #000 96px
+  );
+}
+.signalPulse {
+  position: absolute;
+  inset: 100% 0 auto;
+  height: 100%;
+  opacity: 0;
+  animation: signal-travel 10s 10s linear infinite;
+}
+.signalPulse::before {
+  content: "";
+  position: absolute;
+  top: -5px;
+  left: calc(50% - 3px);
+  width: 6px;
+  height: 10px;
+  border-radius: 50%;
+  background: radial-gradient(
+    ellipse,
+    #effff4 12%,
+    #b8ffd9 42%,
+    #7fefb680 68%,
+    transparent 90%
+  );
+  box-shadow: 0 0 9px 2px #7ff1b58a;
+}
+.signalPulse::after {
+  content: "";
+  position: absolute;
+  top: -14px;
+  left: calc(50% - 14px);
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: radial-gradient(
+    ellipse,
+    #9bffc84d,
+    #65dbad21 34%,
+    transparent 70%
+  );
+}
+
+/* Fixed pockets of vapor are revealed behind the head, then fade in place.
+   No luminous full-height stroke or moving tail is attached to the projectile. */
+.signalTrail {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 4px 12% at 49% 12%, #96edc352, transparent 78%),
+    radial-gradient(ellipse 3px 11% at 54% 27%, #80e5b547, transparent 78%),
+    radial-gradient(ellipse 4px 14% at 46% 44%, #8aebbc40, transparent 78%),
+    radial-gradient(ellipse 3px 13% at 53% 63%, #81e4b638, transparent 78%),
+    radial-gradient(ellipse 5px 16% at 48% 84%, #7edcad2e, transparent 80%);
+  clip-path: inset(100% 0 0);
+  opacity: 0;
+  animation: signal-wake 10s 10s linear infinite;
+}
+
+.signalOrb {
+  position: absolute;
+  width: var(--signal-orb-size);
+  height: var(--signal-orb-size);
+  bottom: 0;
+  left: calc(50% - var(--signal-orb-size) / 2);
+}
+.signalShell {
+  position: absolute;
+  inset: 0;
+  transform: scale(var(--signal-body-scale, 1));
+  border: 1px solid color-mix(in srgb, var(--green) 76%, transparent);
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 35% 28%,
+    var(--surface-soft),
+    var(--surface) 65%
+  );
+}
+.signalCharge {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 37% 27%,
+    #edfff2,
+    #8eddb5 43%,
+    #427c60 72%,
+    #203f32
+  );
+  opacity: calc(0.18 + var(--signal-energy, 0) * 0.82);
+  transform: scale(calc(0.7 + var(--signal-energy, 0) * 0.34));
+  box-shadow:
+    0 0 calc(2px + var(--signal-energy, 0) * 4px)
+      calc(var(--signal-energy, 0) * 2px)
+      rgb(220 255 233 / calc(var(--signal-energy, 0) * 0.65)),
+    0 0 calc(3px + var(--signal-energy, 0) * 18px)
+      calc(var(--signal-energy, 0) * 7px)
+      rgb(153 244 197 / calc(var(--signal-energy, 0) * 0.44));
+}
+.signalRings {
+  position: absolute;
+  left: calc(50% - 32px);
+  top: calc(50% - 32px);
+  width: 64px;
+  height: 64px;
+  overflow: visible;
+  transform-origin: 50% 50%;
+  transform-box: view-box;
+  animation: signal-precession 20s linear infinite;
+}
+.signalRing {
+  fill: none;
+  stroke: color-mix(in srgb, var(--green) 64%, transparent);
+  stroke-width: 1;
+}
+.signalRing:nth-child(2) {
+  stroke-opacity: 0.72;
+}
+.signalSpark {
+  fill: #c4ffdc;
+  filter: drop-shadow(0 0 2px #82eab1);
+  /* Both complete ellipse laps share the same exact right-hand junction.
+     Tracks and spark precess together, so every handoff stays on the rings. */
+  offset-path: path(
+    "M 43.853500956735395 32 A 23 7.5 35 1 1 20.146499043264605 32 A 23 7.5 35 1 1 43.853500956735395 32 A 23 7.5 -35 1 1 20.146499043264605 32 A 23 7.5 -35 1 1 43.853500956735395 32 Z"
+  );
+  offset-anchor: 0px 0px;
+  offset-rotate: 0deg;
+  animation: signal-orbit-charge 10s cubic-bezier(0.55, 0.05, 0.85, 0.5)
+    infinite;
+}
+
+/* A compact impulse releases through the north cap. The pressure rim and
+   asymmetric plasma dissipate quickly so the sphere and next charge stay clear. */
+.signalBloom {
+  position: absolute;
+  inset: -1px;
+  border-radius: 50%;
+  opacity: 0;
+  background: radial-gradient(
+    ellipse at 50% 22%,
+    #effff2 0%,
+    #c8ffe1b8 18%,
+    #91edbb70 40%,
+    #61ba8524 65%,
+    transparent 83%
+  );
+  animation: signal-bloom 10s 10s linear infinite;
+}
+.signalBloom::after {
+  content: "";
+  position: absolute;
+  top: -1px;
+  left: calc(50% - 4px);
+  width: 8px;
+  height: 11px;
+  border-radius: 50%;
+  background: radial-gradient(
+    ellipse,
+    #fbfff4 8%,
+    #d8ffe7b8 32%,
+    transparent 74%
+  );
+  box-shadow: 0 0 7px 1px #b5ffd852;
+}
+.signalShockwave {
+  position: absolute;
+  top: calc(50% - 12px);
+  left: calc(50% - 12px);
+  width: 24px;
+  height: 24px;
+  border: 0.6px solid #c3ffe0;
+  border-radius: 50%;
+  box-shadow: 0 0 3px #8ceabd45;
+  opacity: 0;
+  animation: signal-shockwave 10s 10s linear infinite;
+}
+.signalDischarge {
+  position: absolute;
+  top: calc(50% - 60px);
+  left: calc(50% - 32px);
+  width: 64px;
+  height: 80px;
+  overflow: visible;
+}
+.signalPlasma {
+  transform-origin: 32px 60px;
+  opacity: 0;
+  animation: signal-plasma 10s 10s linear infinite;
+}
+.signalPlasmaEnvelope {
+  filter: blur(0.65px);
+}
+.signalPlasmaCore {
+  fill: #edffeec9;
+  filter: blur(0.4px);
+}
+.signalPlasmaFilament {
+  fill: none;
+  stroke: #a9f6d078;
+  stroke-width: 0.55;
+  stroke-linecap: round;
+}
+.signalParticles {
+  position: absolute;
+  inset: 0;
+}
+.signalParticles > i {
+  position: absolute;
+  top: calc(50% - 1px);
+  left: calc(50% - 0.5px);
+  width: 1px;
+  height: 2px;
+  border-radius: 50%;
+  background: #caffdf;
+  box-shadow: 0 0 2px #9bedc4;
+  opacity: 0;
+  animation: signal-ejecta 10s 10s linear infinite;
+}
+.signalParticles > i:nth-child(1) {
+  --particle-x: -12px;
+  --particle-y: -31px;
+}
+.signalParticles > i:nth-child(2) {
+  --particle-x: 7px;
+  --particle-y: -39px;
+}
+.signalParticles > i:nth-child(3) {
+  --particle-x: 16px;
+  --particle-y: -24px;
+  width: 0.75px;
+  height: 1px;
+}
+.signalParticles > i:nth-child(4) {
+  --particle-x: -5px;
+  --particle-y: -45px;
+  width: 0.75px;
+  height: 1px;
+}
+
+/* A full ten-second initial charge; three-second decelerating flight overlaps
+   the next charge. The head's center begins at the fixed sphere center. */
+@keyframes signal-travel {
+  0% {
+    transform: translateY(0);
+    opacity: 1;
+    animation-timing-function: cubic-bezier(0.12, 0.72, 0.3, 1);
+  }
+  19% {
+    opacity: 0.8;
+  }
+  30%,
+  100% {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+}
+@keyframes signal-wake {
+  0% {
+    clip-path: inset(100% 0 0);
+    opacity: 0.7;
+    animation-timing-function: cubic-bezier(0.12, 0.72, 0.3, 1);
+  }
+  10% {
+    opacity: 0.4;
+  }
+  30%,
+  100% {
+    clip-path: inset(0% 0 0);
+    opacity: 0;
+  }
+}
+@keyframes signal-precession {
+  from {
+    transform: perspective(140px) rotateZ(-18deg) rotateX(22deg) rotateY(0deg);
+  }
+  to {
+    transform: perspective(140px) rotateZ(-18deg) rotateX(22deg) rotateY(360deg);
+  }
+}
+@keyframes signal-orbit-charge {
+  from {
+    offset-distance: 0%;
+    opacity: 0.32;
+  }
+  to {
+    offset-distance: 400%;
+    opacity: 1;
+  }
+}
+@keyframes signal-bloom {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  0.8% {
+    opacity: 0.72;
+    transform: scale(1.04);
+  }
+  2.2% {
+    opacity: 0.2;
+    transform: scale(1.08);
+  }
+  6%,
+  100% {
+    opacity: 0;
+    transform: scale(1.12);
+  }
+}
+@keyframes signal-shockwave {
+  0% {
+    opacity: 0.72;
+    transform: rotate(-12deg) scale(0.6, 0.2);
+    animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  4%,
+  100% {
+    opacity: 0;
+    transform: rotate(-12deg) scale(2.1, 0.68);
+  }
+}
+@keyframes signal-plasma {
+  0% {
+    opacity: 0.95;
+    transform: scale(0.8, 0.7);
+  }
+  0.7% {
+    opacity: 0.86;
+    transform: scale(1, 1);
+  }
+  2% {
+    opacity: 0.42;
+    transform: translateY(-2px) scale(0.75, 1.06);
+  }
+  5.5%,
+  100% {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.3, 1.12);
+  }
+}
+@keyframes signal-ejecta {
+  0% {
+    opacity: 0.8;
+    transform: translate(0, -6px) scale(0.65);
+    animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  5%,
+  100% {
+    opacity: 0;
+    transform: translate(var(--particle-x), var(--particle-y)) scale(0.15);
+  }
+}
+
+@media (max-width: 1270px) {
+  .populated :global(.chart-grid) {
+    grid-template-columns: 1fr;
+  }
+  .populated :global(.allocation-panel) {
+    grid-template-columns: minmax(140px, 0.65fr) minmax(0, 1.35fr);
+  }
+  .populated :global(.allocation-legend > button) {
+    flex-wrap: nowrap;
+  }
+  .populated :global(.allocation-legend strong) {
+    flex: 0 1 auto;
+    margin-left: auto;
+  }
+  .currentPanel,
+  .targetPanel {
+    padding: 24px;
+  }
+}
+
+@media (max-width: 960px) {
+  .dashboard .overviewCards:global(.net-worth-hero) {
+    grid-template-columns: 1fr;
+  }
+  .currentPanel,
+  .targetPanel {
+    min-height: 0;
+  }
+  .populated :global(.metrics-grid) {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+}
+
+@media (max-width: 760px) {
+  .sidebarNavigation :global(.brand) {
+    margin-right: 38px;
+  }
+}
+
+@media (max-width: 480px) {
+  .populated :global(.trajectory),
+  .populated :global(.allocation-panel) {
+    padding: 20px 16px;
+  }
+  .populated :global(.allocation-panel) {
+    grid-template-columns: 1fr;
+  }
+  .populated :global(.allocation-visual),
+  .populated :global(.allocation-legend) {
+    grid-column: 1;
+  }
+  .populated :global(.section-heading h2) {
+    font-size: 18px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .currentPanel::before {
+    animation: none;
+    transform: none;
+  }
+  .signalPulse,
+  .signalTrail,
+  .signalSpark,
+  .signalCharge,
+  .signalRings,
+  .signalBloom,
+  .signalShockwave,
+  .signalPlasma,
+  .signalParticles > i {
+    animation: none;
+  }
+  .signalPulse,
+  .signalTrail,
+  .signalSpark,
+  .signalBloom,
+  .signalShockwave,
+  .signalPlasma,
+  .signalParticles > i {
+    opacity: 0;
+  }
+  .signalCharge {
+    opacity: 0.25;
+    transform: none;
+    box-shadow: none;
+  }
+}
+
 .dashboard .temporary {
   display: inline-flex;
   align-items: center;

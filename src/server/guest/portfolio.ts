@@ -16,6 +16,15 @@ import {
 } from "@/server/services/closed-session-simulation";
 import { estimateOrderNotional } from "@/server/domain/fill-engine";
 import { decodeContract } from "@/server/providers/demo";
+import {
+  isManualOptionSymbol,
+  parseManualOptionSymbol,
+  MANUAL_OPTION_SOURCE,
+} from "@/lib/manual-options";
+const optionTerms = (symbol: string) =>
+  isManualOptionSymbol(symbol)
+    ? parseManualOptionSymbol(symbol)
+    : decodeContract(symbol);
 import { providers } from "@/server/providers/factory";
 import {
   buildPositionProjection,
@@ -190,6 +199,10 @@ export async function guestOrder(
     : null;
   if (execute && previous) {
     if (
+      (previous.quoteSource === MANUAL_OPTION_SOURCE) !==
+        (ticket.optionPricing === "MANUAL") ||
+      (ticket.optionPricing === "MANUAL" &&
+        previous.fills[0]?.price.toNumber() !== ticket.manualPremium) ||
       previous.portfolioId !== ticket.portfolioId ||
       previous.symbol !== ticket.symbol ||
       previous.assetClass !== ticket.assetClass ||
@@ -235,6 +248,14 @@ export async function guestOrder(
   )
     throw new GuestError(
       "Minimum order value is $0.01, except when closing an entire residual position.",
+    );
+  if (
+    ticket.optionPricing === "MANUAL" &&
+    ticket.side === "BUY" &&
+    (existing?.quantity.toNumber() ?? 0) + ticket.quantity > 1e9
+  )
+    throw new GuestError(
+      "A manual holding cannot exceed one billion contracts.",
     );
   const nextCash = p.cashBalance.plus(
     ticket.side === "BUY" ? -notional : notional,
@@ -293,8 +314,8 @@ export async function guestOrder(
   if (position && ticket.assetClass === "OPTION")
     position.optionDetails = {
       positionId: position.id,
-      ...decodeContract(symbol),
-      strike: new D(decodeContract(symbol).strike),
+      ...optionTerms(symbol),
+      strike: new D(optionTerms(symbol).strike),
       optionSymbol: symbol,
       contracts: quantity.toNumber(),
       multiplier: 100,
@@ -304,7 +325,7 @@ export async function guestOrder(
   const order: GuestPortfolio["orders"][number] = {
     id: orderId,
     clientOrderId: ticket.clientOrderId ?? null,
-    quoteSource: quote.source,
+    quoteSource: quote?.source ?? MANUAL_OPTION_SOURCE,
     portfolioId: p.id,
     assetClass: ticket.assetClass,
     symbol: ticket.symbol,
@@ -318,7 +339,7 @@ export async function guestOrder(
     optionStrike:
       ticket.optionStrike != null ? new D(ticket.optionStrike) : null,
     optionExpiration:
-      ticket.assetClass === "OPTION" ? decodeContract(symbol).expiration : null,
+      ticket.assetClass === "OPTION" ? optionTerms(symbol).expiration : null,
     submittedAt: now,
     filledAt: now,
     fills: [
@@ -354,6 +375,7 @@ export async function guestOrder(
       symbol,
       quote,
       closedSession,
+      ticket.manualPremium,
     ),
     createdAt: now,
   });

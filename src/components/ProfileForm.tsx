@@ -101,12 +101,6 @@ export function ProfileForm({ create = false }: { create?: boolean }) {
           this profile.
         </div>
       )}
-      {guest?.expired && (
-        <div className="error-box" role="status">
-          Your previous guest session has ended. Account-saved portfolios are
-          unaffected.
-        </div>
-      )}
       {!signedIn && (
         <fieldset disabled={busy || isPending}>
           {create && (

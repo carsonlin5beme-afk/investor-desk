@@ -10,6 +10,21 @@ const ui = localFont({
   display: "swap",
   weight: "400 700",
 });
+// Keep financial figures legible even inside the decorative ROME/WHARF faces.
+const numerals = localFont({
+  src: "./fonts/dm-sans-variable.woff2",
+  variable: "--font-numerals",
+  preload: false,
+  display: "swap",
+  weight: "400 700",
+  adjustFontFallback: false,
+  declarations: [
+    {
+      prop: "unicode-range",
+      value: "U+0024-0025,U+002B-002E,U+0030-0039,U+00A3,U+00A5,U+20AC,U+2212",
+    },
+  ],
+});
 const buttonFace = localFont({
   src: "./fonts/high-tide.otf",
   variable: "--font-button-regular",
@@ -52,7 +67,7 @@ export default function RootLayout({
     <html
       lang="en"
       data-theme="dark"
-      className={`${ui.variable} ${rome.variable} ${buttonFace.variable} ${buttonT.variable}`}
+      className={`${ui.variable} ${numerals.variable} ${rome.variable} ${buttonFace.variable} ${buttonT.variable}`}
       suppressHydrationWarning
     >
       <head>

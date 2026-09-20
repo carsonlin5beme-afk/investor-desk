@@ -14,10 +14,15 @@ const captured = vi.hoisted(() => ({
 }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock("@/lib/auth-client", () => ({ authClient: {} }));
-vi.mock("@/components/AmbientRadio", () => ({
-  AmbientRadioControls: () => null,
-  DialogRadioControl: () => null,
-}));
+vi.mock("@/components/AmbientRadio", () => {
+  const silentImpact = () => () => {};
+  return {
+    AmbientRadioControls: () => null,
+    DialogRadioControl: () => null,
+    useAsteroidImpactSound: () => silentImpact,
+    useBlastLaunchSound: () => silentImpact,
+  };
+});
 vi.mock("@/components/Brand", () => ({
   BrandMonogram: () => null,
   BrandWordmark: () => null,
@@ -168,6 +173,104 @@ async function openTicket() {
 }
 
 describe("desk revalidation ownership", () => {
+  it("does not resurrect a deleted portfolio when an older poll completes", async () => {
+    await ready();
+    await act(() => vi.advanceTimersByTimeAsync(15000));
+    const oldPoll = pending.at(-1)!;
+    await act(() =>
+      host
+        .querySelector<HTMLButtonElement>('[aria-label="Manage portfolios"]')!
+        .click(),
+    );
+    await act(() =>
+      host
+        .querySelector<HTMLButtonElement>(
+          '[aria-label="Delete Current portfolio"]',
+        )!
+        .click(),
+    );
+    await act(() =>
+      [...host.querySelectorAll<HTMLButtonElement>("button")]
+        .find((b) => b.textContent?.trim() === "Delete portfolio")!
+        .click(),
+    );
+    const deletion = pending.at(-1)!;
+    expect(deletion.url).toBe("/api/portfolios/portfolio-1");
+    await act(() => deletion.resolve(response({ deletedId: "portfolio-1" })));
+    expect(host.textContent).not.toContain("Current portfolio");
+    await act(() => oldPoll.resolve(response(desk())));
+    expect(host.textContent).not.toContain("Current portfolio");
+    expect(pending.at(-1)!.url).toBe("/api/desk");
+    await act(() =>
+      pending.at(-1)!.resolve(response({ ...desk(), portfolios: [] })),
+    );
+    expect(host.textContent).not.toContain("Current portfolio");
+    expect(host.textContent).toContain("Portfolio deleted");
+  });
+
+  it("handles a fetch rejection when navigation cancels a pending refresh", async () => {
+    await ready();
+    await act(() => vi.advanceTimersByTimeAsync(15000));
+    const request = pending.at(-1)!;
+    request.signal!.addEventListener(
+      "abort",
+      () => request.reject(request.signal!.reason),
+      { once: true },
+    );
+    await act(() => root!.unmount());
+    root = undefined;
+    expect(request.signal!.aborted).toBe(true);
+    await act(() => vi.advanceTimersByTimeAsync(30000));
+    expect(pending).toHaveLength(2);
+  });
+
+  it("handles cancellation after response headers while the JSON body is pending", async () => {
+    await mount();
+    const request = pending[0];
+    const json = vi.fn(
+      () =>
+        new Promise((_, reject) => {
+          request.signal!.addEventListener(
+            "abort",
+            () => reject(request.signal!.reason),
+            { once: true },
+          );
+        }),
+    );
+    await act(() => request.resolve({ ok: true, json } as unknown as Response));
+    expect(json).toHaveBeenCalledOnce();
+    await act(() => root!.unmount());
+    root = undefined;
+    expect(request.signal!.aborted).toBe(true);
+    await act(() => vi.advanceTimersByTimeAsync(30000));
+    expect(pending).toHaveLength(1);
+  });
+
+  it("catches an obsolete Strict Mode abort without hiding a subsequent HTTP failure", async () => {
+    vi.mocked(fetch).mockImplementation((url, options = {}) => {
+      if (url === "/api/workspace")
+        return Promise.resolve(response({ entries: [] }));
+      return new Promise<Response>((resolve, reject) => {
+        const signal = options?.signal ?? undefined;
+        signal?.addEventListener("abort", () => reject(signal.reason), {
+          once: true,
+        });
+        pending.push({ url: String(url), signal, resolve, reject });
+      });
+    });
+    await mount(true);
+    expect(pending).toHaveLength(2);
+    expect(pending[0].signal!.aborted).toBe(true);
+    await act(() =>
+      pending[1].resolve({
+        ok: false,
+        json: async () => ({ error: "Desk temporarily unavailable" }),
+      } as Response),
+    );
+    expect(host.textContent).toContain("Desk temporarily unavailable");
+    expect(host.textContent).not.toContain("aborted");
+  });
+
   it("coalesces repeated mutation refreshes behind a poll and skips its obsolete snapshot", async () => {
     await ready();
     await openTicket();

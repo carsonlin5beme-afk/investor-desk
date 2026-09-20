@@ -1,3 +1,7 @@
+import {
+  isManualOptionSymbol,
+  MANUAL_OPTION_SOURCE,
+} from "@/lib/manual-options";
 import { isQuoteStale } from "@/server/domain/staleness";
 import { Prisma, TargetMode } from "@prisma/client";
 import { env } from "@/lib/env";
@@ -15,10 +19,11 @@ type PositionWithRelations = Prisma.PositionGetPayload<{
 }>;
 export async function buildPositionProjection(position: PositionWithRelations) {
   const option = position.optionDetails;
+  const manual = isManualOptionSymbol(position.symbol);
   // These independent reads retain the quote service's source and cache checks.
   // A slow option feed must not delay starting the underlying equity request.
   const [quote, optionUnderlyingQuote] = await Promise.all([
-    getLiveQuote(position.symbol, position.assetClass),
+    manual ? null : getLiveQuote(position.symbol, position.assetClass),
     option ? getLiveQuote(option.underlying, "EQUITY") : null,
   ]);
   const mark = quoteMark(quote);
@@ -89,7 +94,9 @@ export async function buildPositionProjection(position: PositionWithRelations) {
           : ("MARK" as const),
     quoteStale: !quote || isQuoteStale(quote.asOf, env.QUOTE_STALE_SECONDS),
     quoteAsOf: mark === null ? null : (quote?.asOf.toISOString() ?? null),
-    quoteSource: quote?.source ?? "unavailable",
+    quoteSource: manual
+      ? MANUAL_OPTION_SOURCE
+      : (quote?.source ?? "unavailable"),
     impliedVolatility: option ? modelIV : null,
     ivEstimated: Boolean(option && !(iv != null && iv > 0)),
     underlyingPrice: quoteMark(underlyingQuote),

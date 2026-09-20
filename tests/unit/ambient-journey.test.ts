@@ -79,6 +79,7 @@ const processor = () => {
   let Factory!: new (options: object) => Processor;
   runInNewContext(journeyProcessorSource, {
     sampleRate: 48000,
+    currentFrame: 0,
     AudioWorkletProcessor: class {
       port = { onmessage: null, postMessage() {} };
     },

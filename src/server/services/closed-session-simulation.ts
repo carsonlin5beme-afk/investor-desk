@@ -1,3 +1,4 @@
+import { parseManualOptionSymbol } from "@/lib/manual-options";
 import { env } from "@/lib/env";
 import type { ClosedSessionBasis } from "@/lib/quote-status";
 import type { MarketQuote } from "@/server/domain/types";
@@ -212,13 +213,23 @@ export function executionAuditNote(
   side: string,
   quantity: number,
   symbol: string,
-  quote: MarketQuote,
+  quote: MarketQuote | null,
   basis: ClosedSessionBasis | null,
+  manualPremium?: number,
 ) {
+  if (!quote) {
+    if (manualPremium == null)
+      throw new Error("Manual premium is required for the receipt.");
+    const terms = parseManualOptionSymbol(symbol);
+    const label = `${terms.underlying} $${terms.strike} ${terms.right.toLowerCase()} expiring ${terms.expiration.toISOString().slice(0, 10)}`;
+    return `${side} ${quantity} ${label} (manual) · Manual entry premium per share ${manualPremium}`;
+  }
   return `${side} ${quantity} ${symbol} (${quote.source}) · Quote at ${quote.asOf.toISOString()}${basis ? " · Closed-session limit simulation using last available quote" : ""}`;
 }
 
 export function auditQuoteMetadata(note: string | null | undefined) {
+  if (note?.includes(" (manual) · Manual entry premium per share "))
+    return { quoteAsOf: null, simulationBasis: "MANUAL" as const };
   const asOf = note?.match(
     / · Quote at (\d{4}-\d{2}-\d{2}T[\d:.]+Z)(?: ·|$)/,
   )?.[1];

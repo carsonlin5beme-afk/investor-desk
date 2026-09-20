@@ -190,28 +190,26 @@
 }
 .orbitPlaneOuter {
   transform: rotate(-35deg);
-  animation: orbit-precess-outer 36s ease-in-out infinite paused;
+  animation: orbit-precess-outer 36s linear infinite paused;
 }
 .orbitPlaneInner {
-  transform: rotate(35deg) scaleY(0.9);
-  animation: orbit-precess-inner 48s ease-in-out infinite paused;
+  transform: rotate(35deg);
+  animation: orbit-precess-inner 48s linear infinite paused;
 }
 @keyframes orbit-precess-outer {
-  0%,
-  100% {
-    transform: rotate(-35deg) scaleY(1);
+  from {
+    transform: rotate(-35deg);
   }
-  50% {
-    transform: rotate(40deg) scaleY(0.72);
+  to {
+    transform: rotate(325deg);
   }
 }
 @keyframes orbit-precess-inner {
-  0%,
-  100% {
-    transform: rotate(35deg) scaleY(0.9);
+  from {
+    transform: rotate(35deg);
   }
-  50% {
-    transform: rotate(-50deg) scaleY(1);
+  to {
+    transform: rotate(-325deg);
   }
 }
 .orbitTrack {
@@ -225,7 +223,6 @@
   stroke-linecap: round;
   stroke-dasharray: 22 78;
   stroke-dashoffset: var(--orbit-phase);
-  vector-effect: non-scaling-stroke;
   animation: orbit-flow 12s linear infinite;
   animation-play-state: paused;
 }
@@ -267,6 +264,9 @@
   animation-play-state: running;
 }
 @keyframes orbit-flow {
+  from {
+    stroke-dashoffset: var(--orbit-phase);
+  }
   to {
     stroke-dashoffset: calc(var(--orbit-phase) - 100px);
   }

@@ -153,6 +153,7 @@ class LongWayHome extends AudioWorkletProcessor {
     this.chords = score.chords;
     this.chordFrames = this.loopFrames / this.chords.length;
     this.position = 0;
+    this.clock = { type: 'journey-clock', positionFrames: 0, contextFrame: 0 };
     this.nextEvent = 0;
     this.loops = 0;
     this.running = true;
@@ -237,6 +238,11 @@ class LongWayHome extends AudioWorkletProcessor {
       }
       const chord = Math.min(this.chords.length - 1, Math.floor(this.position / this.chordFrames));
       if (chord !== this.chordIndex) {
+        // The paired render clocks let external one-shots follow this harmony,
+        // even when the main thread receives the message late.
+        this.clock.positionFrames = this.position;
+        this.clock.contextFrame = currentFrame + i;
+        this.port.postMessage(this.clock);
         this.chordIndex = chord; this.bank = 1 - this.bank; this.fade = 0;
         for (let p = 0; p < 4; p++) this.padFrequency[this.bank * 4 + p] = 440 * Math.pow(2, (this.chords[chord][p] - 69) / 12);
       }

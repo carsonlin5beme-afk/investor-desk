@@ -52,6 +52,9 @@ export function Holdings({
         : Number(x) - Number(y)) * sort.direction
     );
   });
+  const missingPnlCount = holdings.filter(
+    (holding) => holding.projection.quoteSource === "manual",
+  ).length;
   const total = holdings.reduce(
     (s, h) => ({
       current: s.current + h.projection.currentMarketValue,
@@ -167,13 +170,15 @@ export function Holdings({
                           p.quoteStale || p.priceEstimated ? "warning-text" : ""
                         }
                       >
-                        {p.priceEstimated
-                          ? "Cost-basis estimate"
-                          : p.quoteSource === "demo"
-                            ? "Sample quote"
-                            : p.quoteStale
-                              ? "Stale quote"
-                              : p.quoteSource}
+                        {p.quoteSource === "manual"
+                          ? "Manual entry · cost-basis estimate"
+                          : p.priceEstimated
+                            ? "Cost-basis estimate"
+                            : p.quoteSource === "demo"
+                              ? "Sample quote"
+                              : p.quoteStale
+                                ? "Stale quote"
+                                : p.quoteSource}
                         {p.valuationBasis === "OPTION_MIDPOINT"
                           ? " · midpoint estimate"
                           : ""}
@@ -197,18 +202,29 @@ export function Holdings({
                   </small>
                 </td>
                 <td data-label="Unrealized P/L">
-                  <strong
-                    className={p.unrealizedPnL >= 0 ? "positive" : "negative"}
-                  >
-                    {p.unrealizedPnL > 0 ? "+" : ""}
-                    {money(p.unrealizedPnL)}
-                  </strong>
-                  <small>
-                    {p.costBasis
-                      ? ((p.unrealizedPnL / p.costBasis) * 100).toFixed(2)
-                      : "0"}
-                    %
-                  </small>
+                  {p.quoteSource === "manual" ? (
+                    <>
+                      <strong>Unavailable</strong>
+                      <small>No current market mark</small>
+                    </>
+                  ) : (
+                    <>
+                      <strong
+                        className={
+                          p.unrealizedPnL >= 0 ? "positive" : "negative"
+                        }
+                      >
+                        {p.unrealizedPnL > 0 ? "+" : ""}
+                        {money(p.unrealizedPnL)}
+                      </strong>
+                      <small>
+                        {p.costBasis
+                          ? ((p.unrealizedPnL / p.costBasis) * 100).toFixed(2)
+                          : "0"}
+                        %
+                      </small>
+                    </>
+                  )}
                 </td>
                 <td data-label="Underlying target">
                   <button
@@ -254,7 +270,23 @@ export function Holdings({
               Visible holdings · {holdings.length} of {totalCount}
             </td>
             <td>{money(total.current)}</td>
-            <td>{money(total.pnl)}</td>
+            <td data-label="Unrealized P/L">
+              {missingPnlCount ? (
+                <>
+                  <strong>
+                    {missingPnlCount === holdings.length
+                      ? "Unavailable"
+                      : "Incomplete"}
+                  </strong>
+                  <small>
+                    No current market mark for {missingPnlCount} manual{" "}
+                    {missingPnlCount === 1 ? "holding" : "holdings"}.
+                  </small>
+                </>
+              ) : (
+                money(total.pnl)
+              )}
+            </td>
             <td>Cash shown separately</td>
             <td>{money(total.target)}</td>
             <td />

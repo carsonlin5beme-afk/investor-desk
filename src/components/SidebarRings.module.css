@@ -1,0 +1,44 @@
+.rings {
+  position: absolute;
+  left: calc(50% - 32px);
+  top: calc(50% - 32px);
+  width: 64px;
+  height: 64px;
+  overflow: visible;
+  pointer-events: none;
+  fill: none;
+  stroke: color-mix(in srgb, var(--green) 76%, transparent);
+  stroke-width: 0.85;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.rim {
+  opacity: calc(0.12 + var(--signal-energy, 0) * 0.23);
+  stroke-width: 0.45;
+}
+.flow {
+  stroke: #b9efd1;
+  stroke-width: 1.5;
+  opacity: calc(0.035 + var(--signal-energy, 0) * 0.2);
+  filter: blur(0.2px);
+}
+.faintFlow {
+  opacity: 0.42;
+}
+.back {
+  opacity: calc(0.2 + var(--signal-energy, 0) * 0.22);
+}
+.front {
+  opacity: calc(0.45 + var(--signal-energy, 0) * 0.48);
+}
+.spark {
+  fill: #c4ffdc;
+  stroke: none;
+  filter: drop-shadow(0 0 2px #82eab1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spark {
+    opacity: 0;
+  }
+}

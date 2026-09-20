@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { Holding, Portfolio } from "./desk-types";
 import { blackScholesPrice } from "@/server/domain/black-scholes";
 import { resolveOptionExpiry, optionExpiryPolicy } from "./option-expiration";
+import { monthlyPlanSchema, validateMonthlySnapshot } from "./monthly-scenario";
 
 const finite = z.number().finite();
 // Match the projection service's per-position cent rounding without importing
@@ -18,6 +19,15 @@ export const scenarioAssetSchema = z.object({
   costBasis: finite.nonnegative().max(1e20),
   spot: finite.nonnegative().max(1e16).nullable(),
   target: finite.nonnegative().max(1e16).nullable(),
+  quoteQuality: z
+    .object({
+      estimated: z.boolean(),
+      stale: z.boolean(),
+      asOf: z.string().datetime().nullable(),
+      source: z.string().max(100),
+      ivEstimated: z.boolean(),
+    })
+    .optional(),
   option: z
     .object({
       strike: finite.nonnegative().max(1e16),
@@ -50,6 +60,7 @@ export const scenarioSchema = z.object({
   cash: finite.nonnegative().max(1e20),
   assets: z.array(scenarioAssetSchema).max(2000),
   assumptions: assumptionsSchema,
+  monthly: monthlyPlanSchema.optional(),
 });
 export type SavedScenario = z.infer<typeof scenarioSchema>;
 export const journalSchema = z.object({
@@ -118,6 +129,7 @@ export function validateWorkspaceValue(
   if (key === "preferences") return preferencesSchema.parse(value);
   if (key.startsWith("scenario:")) {
     const v = scenarioSchema.parse(value);
+    validateMonthlySnapshot(v);
     if (key !== `scenario:${v.id}`)
       throw new Error("Scenario ID does not match.");
     return v;
@@ -143,6 +155,13 @@ export function assetFromHolding(h: Holding): ScenarioAsset {
     costBasis: h.projection.costBasis,
     spot: o ? h.projection.underlyingPrice : h.projection.currentPrice,
     target: h.projection.hasTarget ? h.projection.targetUnderlyingPrice : null,
+    quoteQuality: {
+      estimated: h.projection.priceEstimated,
+      stale: h.projection.quoteStale,
+      asOf: h.projection.quoteAsOf,
+      source: h.projection.quoteSource,
+      ivEstimated: h.projection.ivEstimated,
+    },
     option: o
       ? {
           strike: Number(o.strike),

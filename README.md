@@ -159,6 +159,32 @@ Cash is rounded to cents. Sub-cent buys and partial sales are rejected; a full c
 
 USD, long-only, standard 100-share options, and zero fees. No shorting, margin, spreads, adjusted deliverables, liquidity/slippage model, dividends, splits, corporate actions, automatic exercise, or early-exercise pricing. The activity view shows recent entries, not a full performance or tax report. Models and sample data are not investment advice.
 
+### Monthly scenarios
+
+Open **Scenario studio → Monthly** to set a shared underlying-price assumption for each month. Shares and options on the same underlying use that price together. Checkpoints are calendar month-end at 4 pm New York time, including weekends; the existing **Target progress** view remains available.
+
+Choose **Stock price** or **Company valuation (market cap)** for each underlying. Valuation targets require an explicit whole-company shares-outstanding assumption; valuation divided by that share count gives the stock price used by both shares and options. The share count stays constant across that saved path. Both input modes retain their raw values when switching or reopening. Blank inputs remain incomplete; known funds use share-price targets.
+
+Before expiry, options use the disclosed fixed volatility and rate assumptions with time remaining to their actual expiration. At expiry, the scenario assumes liquidation at intrinsic value and carries those hypothetical proceeds forward once. An expiry price comes from adjacent dated inputs or an explicit override. This never exercises a contract or changes portfolio cash. Blank prices mean incomplete inputs; $0 is a valid downside assumption.
+
+Each month separates portfolio value, modeled profit versus original holding cost, and change versus the captured snapshot. Save the scenario to retain its dated assumptions in the current workspace; guest scenarios remain temporary. Conflicting captured prices require a shared assumption rather than an arbitrary quote choice.
+
+### Manual options
+
+Open a portfolio, choose **New order → Options → Manual entry**, and enter the underlying ticker, call/put, strike, actual expiration date, whole contract count, and premium **per share**. Preview the cost, then record the simulated trade. Each contract represents 100 shares. To sell an existing manual holding, enter its exit premium explicitly; its contract terms stay fixed.
+
+Manual entry works without an options-price subscription. It does not verify that a contract is listed or fetch its market price. Manual holdings stay separate from provider-priced contracts, show a cost-basis estimate, and do not claim a current market profit/loss. Scenario estimates use actual expiration dates and disclosed model assumptions, including the 60% volatility fallback. There is no backdated entry, automatic exercise, or automatic settlement; positive premiums and unexpired contracts are required for recording trades.
+
+### Delete a portfolio
+
+Open **Manage portfolios** beside the sidebar's Portfolios heading, choose **Delete** for the portfolio, and confirm its displayed name. This removes its holdings, cash and activity; saved scenario snapshots remain available. Deleting the active portfolio returns to the overview. Cancellation leaves it unchanged.
+
+### Space experience
+
+The sidebar's paired rings charge a floating orb and launch a fading beam toward the portfolio list. Asteroids drift diagonally, sometimes in pairs; rare gold encounters have their own visual response. These effects are decorative and never change portfolio values or trades.
+
+Enable **Space radio** to hear *The Long Way Home* with the harmonically matched launch chime and distinct normal/gold impact sounds. Effects follow the radio's volume and mute state. Hidden/offscreen and reduced-motion behavior prevents missed effects from replaying when the page becomes active again.
+
 ### Original vision examples
 
 - 228 TSLA shares at a $2,000 target = **$456,000** equity value.

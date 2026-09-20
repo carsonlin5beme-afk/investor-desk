@@ -1,3 +1,7 @@
+import {
+  isManualOptionSymbol,
+  MANUAL_OPTION_SOURCE,
+} from "@/lib/manual-options";
 import { AssetClass } from "@prisma/client";
 
 import { env } from "@/lib/env";
@@ -73,7 +77,9 @@ export const ensureQuoteJobsForPortfolio = async (portfolioId: string) => {
   const optionContracts = positions
     .filter((position) => position.assetClass === AssetClass.OPTION)
     .map((position) => position.optionDetails?.optionSymbol ?? position.symbol)
-    .filter(Boolean) as string[];
+    .filter(
+      (symbol) => Boolean(symbol) && !isManualOptionSymbol(symbol),
+    ) as string[];
 
   const digest = symbolsDigest(equitySymbols, optionContracts);
   const state = getState();

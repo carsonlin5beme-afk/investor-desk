@@ -6,6 +6,8 @@ import {
   TargetMode,
 } from "@prisma/client";
 import { z } from "zod";
+import { optionExpirationDate } from "@/lib/option-expiration";
+import { validateManualOptionTicket } from "@/lib/manual-options";
 
 export const createPortfolioSchema = z.object({
   name: z.string().trim().min(1).max(80),
@@ -21,6 +23,14 @@ export const cashAdjustSchema = z.object({
 
 export const orderTicketSchema = z
   .object({
+    optionPricing: z.enum(["PROVIDER", "MANUAL"]).optional(),
+    manualPremium: z
+      .number()
+      .finite()
+      .min(0.000001)
+      .max(1e6)
+      .multipleOf(0.000001)
+      .optional(),
     clientOrderId: z.string().uuid().optional(),
     closedSessionPreview: z
       .object({
@@ -60,9 +70,31 @@ export const orderTicketSchema = z
       .max(99999.999)
       .multipleOf(0.001)
       .optional(),
-    optionExpiration: z.coerce.date().optional(),
+    optionExpiration: z
+      .union([z.string(), z.date()])
+      .transform((value, ctx) => {
+        try {
+          return new Date(`${optionExpirationDate(value)}T00:00:00.000Z`);
+        } catch {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "Invalid option expiration date.",
+          });
+          return z.NEVER;
+        }
+      })
+      .optional(),
   })
   .superRefine((value, ctx) => {
+    try {
+      validateManualOptionTicket(value);
+    } catch (error) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["optionPricing"],
+        message: (error as Error).message,
+      });
+    }
     if (value.orderType === OrderType.LIMIT && !value.limitPrice) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -78,7 +110,7 @@ export const orderTicketSchema = z
           path: ["quantity"],
           message: "Options require whole contracts",
         });
-      if (!value.optionContractSymbol) {
+      if (!value.optionContractSymbol && value.optionPricing !== "MANUAL") {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ["optionContractSymbol"],
@@ -107,6 +139,10 @@ export const orderTicketSchema = z
         });
       }
     }
+  })
+  .transform((value) => {
+    const manual = validateManualOptionTicket(value);
+    return manual ? { ...value, optionContractSymbol: manual.symbol } : value;
   });
 
 export const targetScenarioSchema = z

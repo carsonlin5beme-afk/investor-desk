@@ -29,13 +29,31 @@ const stateLabel: Record<AmbientState, string> = {
   suspended: "Tap to resume",
   error: "Playback unavailable",
 };
+export type AsteroidImpactSound = (gold: boolean) => () => void;
+export type BlastLaunchSound = () => () => void;
+const noImpact = () => {};
+const silentImpact: AsteroidImpactSound = () => noImpact;
+const silentLaunch: BlastLaunchSound = () => noImpact;
+
 const RadioContext = createContext<{
   state: AmbientState;
   volume: number;
   motionVisible: boolean;
   toggle: () => void;
   changeVolume: (value: number) => void;
+  playImpact: AsteroidImpactSound;
+  playLaunch: BlastLaunchSound;
 } | null>(null);
+
+/** Stable across playback/volume updates so decorative emitters keep their clock. */
+export function useAsteroidImpactSound(): AsteroidImpactSound {
+  return useContext(RadioContext)?.playImpact ?? silentImpact;
+}
+
+/** The visual launch clock can retain this callback across radio state changes. */
+export function useBlastLaunchSound(): BlastLaunchSound {
+  return useContext(RadioContext)?.playLaunch ?? silentLaunch;
+}
 
 export function AmbientRadio({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AmbientState>("idle");
@@ -57,6 +75,24 @@ export function AmbientRadio({ children }: { children: ReactNode }) {
     engine.current.setVolume(volumeRef.current);
     void engine.current.play();
   }, [updateState]);
+  const playImpact = useCallback<AsteroidImpactSound>((gold) => {
+    if (
+      stateRef.current !== "playing" ||
+      volumeRef.current <= 0 ||
+      document.visibilityState !== "visible"
+    )
+      return noImpact;
+    return engine.current?.playImpact(gold) ?? noImpact;
+  }, []);
+  const playLaunch = useCallback<BlastLaunchSound>(() => {
+    if (
+      stateRef.current !== "playing" ||
+      volumeRef.current <= 0 ||
+      document.visibilityState !== "visible"
+    )
+      return noImpact;
+    return engine.current?.playLaunch() ?? noImpact;
+  }, []);
   const changeVolume = useCallback((value: number) => {
     const next = Number.isFinite(value)
       ? Math.max(0, Math.min(1, value))
@@ -71,8 +107,15 @@ export function AmbientRadio({ children }: { children: ReactNode }) {
     }
   }, []);
   useEffect(() => {
-    const visibility = () =>
-      setMotionVisible(document.visibilityState === "visible");
+    const visibility = () => {
+      const visible = document.visibilityState === "visible";
+      setMotionVisible(visible);
+      // Background music is intentional; transient visual effects are not.
+      if (!visible) {
+        engine.current?.cancelImpact();
+        engine.current?.cancelLaunch();
+      }
+    };
     visibility();
     document.addEventListener("visibilitychange", visibility);
     return () => document.removeEventListener("visibilitychange", visibility);
@@ -105,7 +148,15 @@ export function AmbientRadio({ children }: { children: ReactNode }) {
   }, [updateState]);
   return (
     <RadioContext.Provider
-      value={{ state, volume, motionVisible, toggle, changeVolume }}
+      value={{
+        state,
+        volume,
+        motionVisible,
+        toggle,
+        changeVolume,
+        playImpact,
+        playLaunch,
+      }}
     >
       {children}
     </RadioContext.Provider>

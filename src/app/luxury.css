@@ -21,33 +21,37 @@
   --positive-bg: #e6f0e5;
   --negative-bg: #f9e9e4;
   --shadow: 0 10px 32px #213f3010;
-  --font-ui: var(--font-rome), var(--font-fallback), sans-serif;
+  --font-ui:
+    var(--font-numerals), var(--font-rome), var(--font-fallback), sans-serif;
+  --font-numeric: var(--font-fallback), "Avenir Next", sans-serif;
   --font-editorial: var(--font-ui);
   --font-button:
-    var(--font-button-t), var(--font-button-regular), var(--font-fallback),
-    sans-serif;
+    var(--font-numerals), var(--font-button-t), var(--font-button-regular),
+    var(--font-fallback), sans-serif;
   --font: var(--font-ui);
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
   --radius: 14px;
   color-scheme: light;
 }
 :root[data-theme="dark"] {
-  --paper: #05080e;
-  --surface: #0b111b;
-  --surface-soft: #111b27;
-  --ink: #d7e0e9;
-  --muted: #95a5b5;
+  --paper: #04080d;
+  --surface: #08121a;
+  --surface-soft: #0a161f;
+  --ink: #d4e2e7;
+  --muted: #9dacb7;
   --green: #91afa2;
   --green-dark: #20392f;
-  --line: #263442;
+  --line: #22343e;
   --field-border: #526977;
   --focus: #bedfd0;
   --action-ink: #dfece6;
   --accent-glow: none;
-  --number-core: #b4e7cd;
-  --number-soft: #afc9bd;
-  --number-glow: 0 0 1px #bcecdab3, 0 0 5px #8ed8b575, 0 0 9px #75bc991f;
-  --number-glow-small: 0 0 3px #8bd1b04d;
+  --number-core: #c6f2dc;
+  --number-primary: #d0fae5;
+  --number-soft: #b1d2c3;
+  /* An outer bloom leaves the solid face, counters and punctuation crisp. */
+  --number-glow: 0 0 10px #93e7bd5c, 0 0 30px #67c2982e;
+  --number-glow-small: none;
   --copper: #e1bc87;
   --red: #f0a5ad;
   --cash: #789f94;
@@ -4548,7 +4552,7 @@ td {
 }
 :root[data-theme="dark"] .sidebar {
   background:
-    radial-gradient(ellipse at 0 0, #6479a60a, transparent 62%), #070b12;
+    radial-gradient(ellipse at 0 0, #6a8fad05, transparent 62%), #050b11;
   border-right: 1px solid var(--line);
 }
 :root[data-theme="dark"]
@@ -4633,18 +4637,25 @@ td {
 }
 :root[data-theme="dark"] .net-worth-hero {
   background:
-    radial-gradient(ellipse at 5% 0, #6f88b00b, transparent 56%),
-    linear-gradient(115deg, #111b29, #090f18 72%);
+    radial-gradient(ellipse at 0 0, #91d9b708, transparent 58%), var(--surface);
 }
-:root[data-theme="dark"]
-  :is(
-    .hero-value,
-    .current-value,
-    .metric-card > strong,
-    .chart-headline > strong
-  ) {
-  color: var(--number-core);
+:root[data-theme="dark"] .current-value {
+  color: var(--number-primary);
   text-shadow: var(--number-glow);
+}
+:root[data-theme="dark"] .hero-value {
+  color: #c5ecd7;
+  text-shadow:
+    0 0 12px #91d9b72e,
+    0 0 28px #75bfa11a;
+}
+:root[data-theme="dark"] :is(.metric-card > strong, .chart-headline > strong) {
+  color: var(--number-soft);
+  text-shadow: none;
+}
+:root[data-theme="dark"] .metric-card[data-value-state="zero"] > strong {
+  color: var(--muted);
+  text-shadow: none;
 }
 :root[data-theme="dark"]
   :is(
@@ -4659,8 +4670,8 @@ td {
   text-shadow: var(--number-glow-small);
 }
 :root[data-theme="dark"] .numeric-highlight {
-  color: var(--number-core);
-  text-shadow: var(--number-glow);
+  color: var(--number-soft);
+  text-shadow: none;
 }
 :root[data-theme="dark"] .numeric-readout:not(.negative) {
   color: var(--number-core);
@@ -4823,7 +4834,7 @@ td {
 
 /* Dark readouts share a crisp sage core; chrome stays below the numeric hierarchy. */
 :root[data-theme="dark"] .topbar {
-  background: #080e17f2;
+  background: #050c13f5;
 }
 :root[data-theme="dark"] .quote-strip > strong {
   color: var(--ink);
@@ -4857,4 +4868,132 @@ td {
   font-synthesis: none;
   letter-spacing: 0.02em;
   -webkit-text-stroke: 0;
+}
+
+/* Financial readouts use solid figures; decorative faces remain on labels. */
+:is(
+  .financial-value,
+  .financial-number,
+  .numeric-highlight,
+  .numeric-readout,
+  .current-value,
+  .hero-value,
+  .metric-card > strong,
+  .chart-headline > strong,
+  .portfolio-card-total > strong,
+  .comparison-totals strong,
+  .holding-detail-value > strong,
+  .scenario-preview > strong,
+  .buying-power > strong,
+  .target-current strong,
+  .target-impact strong,
+  .allocation-legend strong,
+  .quote-strip b
+) {
+  font-family: var(--font-numeric);
+  font-variant-numeric: lining-nums tabular-nums;
+  font-weight: 500;
+  letter-spacing: -0.035em;
+  -webkit-text-stroke: 0;
+}
+
+.metric-card,
+.hero-current,
+.hero-main {
+  container-type: inline-size;
+}
+
+.metric-card {
+  padding: 19px 22px;
+}
+
+.metric-card > strong {
+  font-size: min(clamp(1.875rem, 16cqi, 3.75rem), var(--value-fit, 100cqi));
+  line-height: 1.08;
+  margin: 13px 0 9px;
+  white-space: nowrap;
+}
+
+.current-value {
+  font-size: clamp(1.75rem, 16cqi, 3.75rem);
+}
+
+.hero-value {
+  font-size: clamp(2rem, 18cqi, 4.75rem);
+}
+
+.chart-headline > strong {
+  font-size: clamp(2rem, 3.5vw, 3.25rem);
+  line-height: 1.15;
+}
+
+.portfolio-card-total > strong,
+.comparison-totals strong,
+.holding-detail-value > strong,
+.scenario-preview > strong {
+  font-size: clamp(1.625rem, 2.7vw, 2.5rem);
+  line-height: 1.2;
+}
+
+@media (max-width: 700px) {
+  .metrics-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .metric-card {
+    padding: 16px 20px;
+  }
+
+  .metric-card > strong {
+    font-size: min(clamp(2rem, 12cqi, 3.125rem), var(--value-fit, 100cqi));
+    margin-block: 8px;
+  }
+
+  .metric-card > small {
+    min-height: 0;
+  }
+}
+
+/* Quiet surfaces and optically open small lettering continue below the hero. */
+:root[data-theme="dark"] .panel {
+  background: var(--surface);
+  border-top-color: #2b414b;
+  box-shadow: inset 0 1px 0 #b7d8ea05;
+}
+:root[data-theme="dark"]
+  :is(.eyebrow, .fine-print, .chart-context p, .chart-headline > span) {
+  color: #b8cbd5;
+  -webkit-text-stroke: 0.35px currentColor;
+  font-weight: 500;
+}
+:root[data-theme="dark"] .eyebrow {
+  font-size: 13px;
+  letter-spacing: 0.08em;
+}
+:root[data-theme="dark"]
+  :is(.fine-print, .chart-context p, .chart-headline > span) {
+  font-size: 13px;
+  line-height: 1.7;
+}
+:root[data-theme="dark"]
+  :is(
+    .hero-current > .muted,
+    .hero-growth,
+    .metric-card > div,
+    .metric-card > small
+  ) {
+  font-size: 12px;
+  color: var(--muted);
+}
+:root[data-theme="dark"] .holdings-table :is(th, .sort-button) {
+  font-size: 12px;
+}
+
+:root[data-theme="dark"] .analytical-svg .chart-axis-title {
+  color: #b8cbd5;
+  fill: currentColor;
+  font-size: 11px;
+  stroke: currentColor;
+  stroke-width: 0.3px;
+  paint-order: stroke fill;
 }

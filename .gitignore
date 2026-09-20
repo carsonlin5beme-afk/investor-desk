@@ -20,3 +20,4 @@ output
 # Local browser verification and OAuth credentials/certificates
 .playwright-cli/
 .local/schwab/
+.neon

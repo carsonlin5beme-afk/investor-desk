@@ -30,6 +30,7 @@ vi.mock("@/lib/prisma", () => ({
 import { GET, PUT, DELETE } from "@/app/api/workspace/route";
 import { createGuest, discardGuest, guestKey } from "@/server/guest/store";
 import { defaultPreferences } from "@/lib/studio";
+import { monthlyFixture } from "../fixtures/monthly-scenario";
 const keys: string[] = [];
 const input = (version = 0, value = defaultPreferences) => ({
   key: "preferences",
@@ -69,6 +70,76 @@ function activeGuest() {
   return guest.state;
 }
 describe("workspace route", () => {
+  it("round-trips monthly scenario inputs inside the owning guest and enforces versions", async () => {
+    const state = activeGuest(),
+      scenario = monthlyFixture(),
+      key = `scenario:${scenario.id}`;
+    const body = { key, version: 0, value: scenario };
+    expect((await PUT(request(body))).status).toBe(200);
+    expect(state.entries?.[key].value).toEqual(scenario);
+    expect((await (await GET()).json()).entries[0].value.monthly).toEqual(
+      scenario.monthly,
+    );
+    const changed = structuredClone(scenario);
+    changed.monthly!.paths[0].prices[0] = 0;
+    expect(
+      (await PUT(request({ ...body, value: changed, version: 1 }))).status,
+    ).toBe(200);
+    expect((await PUT(request({ ...body, version: 1 }))).status).toBe(409);
+    const second = activeGuest();
+    expect((await (await GET()).json()).entries).toEqual([]);
+    expect((await PUT(request({ ...body, version: 2 }))).status).toBe(409);
+    expect(second.entries?.[key]).toBeUndefined();
+    expect(state.entries?.[key].version).toBe(2);
+    expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+
+  it("stores validated monthly snapshots under the authenticated profile and rejects invalid paths", async () => {
+    const scenario = monthlyFixture(),
+      key = `scenario:${scenario.id}`;
+    mocks.currentProfile.mockResolvedValue({ id: "profile-a" });
+    mocks.workspaceEntry.count.mockResolvedValue(0);
+    mocks.workspaceEntry.create.mockImplementation(async ({ data }) => ({
+      key: data.key,
+      value: data.value,
+      version: 1,
+      updatedAt: scenario.capturedAt,
+    }));
+    const response = await PUT(
+      request({ key, version: 0, value: { ...scenario, userId: "profile-b" } }),
+    );
+    expect(response.status).toBe(200);
+    expect(mocks.workspaceEntry.create.mock.calls[0][0].data).toEqual({
+      userId: "profile-a",
+      key,
+      value: scenario,
+    });
+    mocks.workspaceEntry.findMany.mockResolvedValue([
+      (await response.json()).entry,
+    ]);
+    expect((await (await GET()).json()).entries[0].value.monthly).toEqual(
+      scenario.monthly,
+    );
+    expect(mocks.workspaceEntry.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { userId: "profile-a" } }),
+    );
+    scenario.monthly!.paths[0].prices[0] = -1;
+    expect(
+      (await PUT(request({ key, version: 1, value: scenario }))).status,
+    ).toBe(400);
+    expect(mocks.workspaceEntry.updateMany).not.toHaveBeenCalled();
+    scenario.monthly!.paths[0].prices[0] = 6;
+    scenario.monthly!.dates[0] = "2026-10-30";
+    expect(
+      (await PUT(request({ key, version: 1, value: scenario }))).status,
+    ).toBe(400);
+    scenario.monthly!.dates[0] = "2026-10-31";
+    scenario.assets[0].quantity = 0;
+    expect(
+      (await PUT(request({ key, version: 1, value: scenario }))).status,
+    ).toBe(400);
+    expect(mocks.workspaceEntry.updateMany).not.toHaveBeenCalled();
+  });
   it("starts empty and creates a guest workspace for the first research or appearance save", async () => {
     expect(await (await GET()).json()).toEqual({
       entries: [],

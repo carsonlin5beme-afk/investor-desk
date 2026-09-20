@@ -1,10 +1,15 @@
 import { guestResponse } from "@/server/guest/http";
-import { portfolioAccess } from "@/server/auth/access";
+import {
+  currentProfile,
+  portfolioAccess,
+  signInRequired,
+} from "@/server/auth/access";
 import { NextResponse } from "next/server";
 
 import { toNumber } from "@/lib/decimal";
 import { prisma } from "@/lib/prisma";
 import { jsonError } from "@/server/api/http";
+import { portfolioDeleteSchema } from "@/lib/portfolio-delete";
 import {
   aggregatePortfolioProjection,
   buildPositionProjection,
@@ -12,6 +17,41 @@ import {
 
 interface Params {
   params: Promise<{ id: string }>;
+}
+
+export async function DELETE(request: Request, { params }: Params) {
+  const temporary = await guestResponse(request);
+  if (temporary) return temporary;
+  const user = await currentProfile();
+  if (!user) return signInRequired();
+  const id = (await params).id;
+  const input = portfolioDeleteSchema.safeParse(
+    await request.json().catch(() => null),
+  );
+  if (!input.success)
+    return jsonError("Confirm the portfolio you want to delete.", 400);
+  try {
+    const portfolio = await prisma.portfolio.findFirst({
+      where: { id, userId: user.id },
+      select: { name: true },
+    });
+    if (!portfolio) return jsonError("Portfolio not found.", 404);
+    if (portfolio.name !== input.data.name)
+      return jsonError(
+        "This portfolio was renamed. Reopen it and confirm again.",
+        409,
+      );
+    // The database cascades only this portfolio's holdings, fills and ledger.
+    // Recheck owner and name in the atomic delete to cover concurrent changes.
+    const result = await prisma.portfolio.deleteMany({
+      where: { id, userId: user.id, name: input.data.name },
+    });
+    if (!result.count)
+      return jsonError("This portfolio changed. Refresh and try again.", 409);
+    return NextResponse.json({ deletedId: id });
+  } catch {
+    return jsonError("Unable to delete this portfolio. Please try again.", 500);
+  }
 }
 
 export async function GET(request: Request, { params }: Params) {

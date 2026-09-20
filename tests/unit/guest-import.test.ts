@@ -7,6 +7,7 @@ vi.mock("@/lib/prisma", () => ({ prisma: db }));
 import { createGuest, discardGuest, getGuest } from "@/server/guest/store";
 import { createPortfolio } from "@/server/guest/portfolio";
 import { importGuest } from "@/server/guest/import";
+import { monthlyFixture } from "../fixtures/monthly-scenario";
 import {
   defaultPreferences,
   type JournalNote,
@@ -133,6 +134,28 @@ function withResearch(state: ReturnType<typeof prepare>) {
   return entry;
 }
 describe("research and preferences transfer", () => {
+  it("preserves a monthly scenario and its version when a saved-profile ID collision creates a copy", async () => {
+    const state = prepare(),
+      scenario = monthlyFixture(),
+      key = `scenario:${scenario.id}`;
+    const entry = {
+      key,
+      value: scenario,
+      version: 4,
+      updatedAt: scenario.capturedAt,
+    };
+    state.entries = { [key]: entry };
+    tx.workspaceEntry.findMany.mockResolvedValue([{ key }]);
+    await importGuest(state.key, "profile-a");
+    const { data } = tx.workspaceEntry.create.mock.calls[0][0];
+    expect(data.key).toBe(`scenario:${data.value.id}`);
+    expect(data.key).not.toBe(key);
+    expect(data.value.monthly).toEqual(scenario.monthly);
+    expect(data.value.assets).toEqual(scenario.assets);
+    expect(data.version).toBe(4);
+    expect(data.userId).toBe("profile-a");
+    expect(scenario.id).toBe(monthlyFixture().id);
+  });
   it("commits guest notes with their version in the same transaction as portfolios and receipt", async () => {
     const state = prepare(),
       entry = withResearch(state);

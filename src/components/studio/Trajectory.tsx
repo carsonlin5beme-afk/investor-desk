@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { type CSSProperties, useMemo, useState } from "react";
 import { Maximize2, ArrowRight } from "lucide-react";
 import { type Holding, money } from "@/lib/desk-types";
 import { assetFromHolding, valueAt, totalAt } from "@/lib/studio";
@@ -41,12 +41,15 @@ export function Trajectory({
     ...contribution.map((c) => Math.abs(c.value)),
     1,
   );
+  const headline = money(
+    totalAt(assets, cash, progress, mode, undefined, at),
+    0,
+  );
   return (
     <section className="panel trajectory">
       <div className="section-heading">
         <div>
-          <span className="eyebrow">Your conviction, in perspective</span>
-          <h2>From here to your targets</h2>
+          <h2>Portfolio value</h2>
         </div>
         <button
           className="icon-button"
@@ -57,8 +60,13 @@ export function Trajectory({
         </button>
       </div>
       <div className="chart-headline">
-        <strong className="private-value">
-          {money(totalAt(assets, cash, progress, mode, undefined, at), 0)}
+        <strong
+          className="private-value"
+          style={
+            { "--value-fit": `${160 / headline.length}cqi` } as CSSProperties
+          }
+        >
+          {headline}
         </strong>
         <span>{Math.round(progress * 100)}% toward your targets</span>
       </div>

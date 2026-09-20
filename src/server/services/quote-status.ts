@@ -1,3 +1,7 @@
+import {
+  isManualOptionSymbol,
+  MANUAL_OPTION_SOURCE,
+} from "@/lib/manual-options";
 import { env } from "@/lib/env";
 import { quoteStatus } from "@/lib/quote-status";
 import { sampleSymbols } from "@/server/providers/demo";
@@ -12,6 +16,12 @@ export function dataStatus(
   asset: "EQUITY" | "OPTION",
   result: QuoteResult,
 ) {
+  if (isManualOptionSymbol(symbol))
+    return quoteStatus({
+      symbol,
+      source: MANUAL_OPTION_SOURCE,
+      hasQuote: false,
+    });
   return quoteStatus({
     symbol,
     source: result.quote?.source ?? quoteSourceFor(asset),

@@ -1,0 +1,513 @@
+.root:global(.studio-page) {
+  min-width: 0;
+  gap: 16px;
+  margin-top: 16px;
+  container: monthly / inline-size;
+}
+.root input,
+.root select,
+.root textarea {
+  width: 100%;
+  min-width: 0;
+}
+.root h3 {
+  margin: 0 0 10px;
+  font-size: 23px;
+}
+.root small {
+  font-size: 12px;
+  color: var(--muted);
+}
+.library {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 12px 18px;
+}
+.library > label {
+  flex: 1;
+  min-width: 190px;
+  max-width: 420px;
+  display: grid;
+  gap: 7px;
+}
+.overview,
+.editor,
+.assumptions {
+  padding: 26px;
+  min-width: 0;
+}
+.topline {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 24px;
+}
+.topline > label {
+  display: grid;
+  gap: 7px;
+  max-width: 440px;
+  flex: 1;
+}
+.topline > span {
+  text-align: right;
+  max-width: 40%;
+  overflow-wrap: anywhere;
+}
+.selection {
+  padding: 18px;
+}
+.topline + .months {
+  margin-top: 12px;
+}
+.baseline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 28px;
+  padding: 22px 0 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.baseline strong {
+  display: block;
+  color: var(--ink);
+  font-size: 19px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-numeric, sans-serif);
+}
+.notice {
+  border: 1px solid var(--field-border);
+  border-left: 3px solid var(--copper);
+  border-radius: 8px;
+  padding: 14px 18px;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.6;
+  background: var(--surface-soft);
+}
+.chart {
+  margin-top: 24px;
+}
+.chart svg {
+  display: block;
+  width: 100%;
+  height: 185px;
+  overflow: visible;
+}
+.chartLabels {
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 12px;
+  padding-bottom: 10px;
+}
+.chartEmpty {
+  padding: 48px 12px;
+  text-align: center;
+  color: var(--muted);
+}
+.gridLine {
+  stroke: var(--line);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.selectionLine {
+  stroke: var(--green);
+  opacity: 0.55;
+  stroke-dasharray: 4 6;
+  vector-effect: non-scaling-stroke;
+}
+.months {
+  display: flex;
+  gap: 9px;
+  overflow-x: auto;
+  max-width: 100%;
+  padding: 5px 3px 3px;
+}
+.months button {
+  flex: 1 0 139px;
+  display: grid;
+  gap: 5px;
+  padding: 10px 13px;
+  text-align: left;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+}
+.months button[aria-pressed="true"] {
+  border-color: var(--green);
+  background: var(--positive-bg);
+  color: var(--ink);
+  box-shadow: inset 0 2px 0 var(--green);
+}
+.months strong {
+  color: var(--ink);
+  font-size: 19px;
+  font-weight: 500;
+}
+.months span {
+  font-size: 12px;
+}
+.horizon,
+.sectionTitle {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.sectionTitle h2 {
+  margin: 0;
+  font-size: 28px;
+}
+.sectionTitle > span {
+  font-size: 12px;
+}
+.totals {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin: -4px 0 0;
+}
+.totals[data-wide-values="true"] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.totals[data-wide-values="true"] > div:first-child {
+  grid-column: 1 / -1;
+}
+.totals > div {
+  padding: 23px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  min-width: 0;
+  container-type: inline-size;
+}
+.totals dt {
+  font-size: 12px;
+  color: var(--muted);
+}
+.totals dd {
+  margin: 12px 0 8px;
+  color: var(--number-core, var(--green));
+  text-shadow: var(--number-glow-small);
+  font-size: min(clamp(30px, 3vw, 44px), var(--amount-fit, 100cqi));
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-numeric, sans-serif);
+  white-space: nowrap;
+}
+.root .loss {
+  color: var(--red);
+  text-shadow: none;
+}
+.root .unavailable,
+.root .neutral {
+  color: var(--muted);
+  text-shadow: none;
+}
+.root .warning {
+  color: var(--copper);
+}
+.editGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  gap: 20px;
+}
+.priceRow {
+  display: grid;
+  grid-template-columns: minmax(95px, 0.6fr) minmax(180px, 1.4fr);
+  align-items: center;
+  gap: 20px;
+  padding: 17px 0;
+  border-bottom: 1px solid var(--line);
+}
+.targetFields {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.targetFields label {
+  display: block;
+  min-width: 0;
+}
+.targetFields .inputLabel {
+  font-size: 13px;
+}
+.targetFields small {
+  margin-top: 0;
+  overflow-wrap: anywhere;
+}
+.priceRow:last-child {
+  border-bottom: 0;
+}
+.priceRow strong,
+.priceRow small,
+.inputLabel {
+  display: block;
+}
+.priceRow small {
+  margin-top: 5px;
+  line-height: 1.6;
+}
+.inputLabel {
+  font-size: 14px;
+  color: var(--ink);
+  margin-bottom: 7px;
+}
+.composition {
+  margin: 22px 0;
+}
+.composition > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 12px;
+  padding: 12px 0;
+  container-type: inline-size;
+  border-bottom: 1px solid var(--line);
+}
+.composition dt {
+  color: var(--muted);
+  font-size: 13px;
+}
+.composition dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-numeric, sans-serif);
+  text-align: right;
+  white-space: nowrap;
+  font-size: min(17px, var(--amount-fit, 100cqi));
+}
+.composition[data-wide-values="true"] > div {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 5px;
+}
+.composition[data-wide-values="true"] dd {
+  text-align: left;
+  font-size: min(19px, var(--amount-fit, 100cqi));
+}
+.policy {
+  margin: 20px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.7;
+}
+.assumptions summary {
+  cursor: pointer;
+  color: var(--ink);
+  line-height: 1.65;
+}
+.assumptionFields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 18px;
+  margin: 20px 0;
+}
+.assumptionFields label {
+  display: grid;
+  gap: 7px;
+  font-size: 13px;
+}
+.assumptions h4 {
+  margin: 24px 0 7px;
+  font-size: 14px;
+  font-weight: 500;
+}
+.tableWrap {
+  overflow-x: auto;
+  max-width: 100%;
+  margin-top: 20px;
+}
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.table th {
+  background: transparent;
+  font-size: inherit;
+  letter-spacing: normal;
+  text-transform: none;
+}
+.table thead th {
+  font-weight: 500;
+  color: var(--muted);
+  background: var(--surface-soft);
+  text-align: right;
+  white-space: nowrap;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.table thead th:first-child {
+  text-align: left;
+}
+.table td,
+.table tbody th {
+  padding: 18px 16px;
+  vertical-align: top;
+  border-bottom: 1px solid var(--line);
+}
+.table tbody th {
+  text-align: left;
+  font-weight: 400;
+  min-width: 220px;
+  max-width: 480px;
+}
+.table tbody strong {
+  display: block;
+  color: var(--ink);
+  font-weight: 500;
+}
+.table tbody small {
+  display: block;
+  margin-top: 5px;
+  line-height: 1.6;
+}
+.table td {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-numeric, sans-serif);
+}
+.table .problem {
+  color: var(--red);
+}
+.table .warning {
+  color: var(--copper);
+}
+.editor > label {
+  display: grid;
+  gap: 9px;
+}
+.footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 20px 26px;
+}
+.footer > div {
+  flex: 1;
+  min-width: 220px;
+}
+.footer p {
+  margin: 7px 0 0;
+}
+.root button:focus-visible,
+.tableWrap:focus-visible,
+.root summary:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
+}
+@media (max-width: 1000px) {
+  .editGrid {
+    grid-template-columns: 1fr;
+  }
+  .totals {
+    gap: 10px;
+  }
+  .totals > div {
+    padding: 18px;
+  }
+}
+@media (max-width: 600px) {
+  .overview,
+  .editor,
+  .assumptions {
+    padding: 18px;
+  }
+  .topline {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+  }
+  .topline > span {
+    max-width: none;
+    text-align: left;
+  }
+  .baseline {
+    gap: 13px 22px;
+  }
+  .totals {
+    grid-template-columns: 1fr;
+  }
+  .totals dd {
+    font-size: min(30px, var(--amount-fit, 100cqi));
+    margin: 8px 0;
+  }
+  .chartLabels {
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .chart svg {
+    height: 145px;
+  }
+  .priceRow {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  .footer > :global(.button) {
+    width: 100%;
+  }
+  .library > label {
+    max-width: none;
+    flex-basis: 100%;
+  }
+  .composition > div {
+    gap: 12px;
+  }
+  .table thead th,
+  .table td,
+  .table tbody th {
+    padding: 13px 10px;
+  }
+}
+
+/* ROME functional labels share one optical weight; figures keep DM Sans. */
+.root
+  :is(
+    .library > label,
+    .topline > label,
+    .totals dt,
+    .inputLabel,
+    .composition dt,
+    .assumptionFields label,
+    .editor > label
+  ) {
+  font-size: 14px;
+  line-height: 1.65;
+  font-weight: 500;
+  -webkit-text-stroke: 0.35px currentColor;
+}
+.root :is(.totals dt, .inputLabel, .composition dt) {
+  color: var(--ink);
+}
+.root
+  :is(.sectionTitle > span, .totals small, .priceRow small, .policy, .notice) {
+  line-height: 1.7;
+}
+.months strong {
+  white-space: nowrap;
+}
+@media (max-width: 600px) {
+  .footer {
+    padding: 18px;
+  }
+  .footer > div {
+    min-width: 0;
+    flex-basis: 100%;
+  }
+}
+
+/* Give exact long values room before reducing their type size. The container
+   threshold also accounts for space occupied by the application's sidebar. */
+@container monthly (max-width: 720px) {
+  .totals,
+  .totals[data-wide-values="true"] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

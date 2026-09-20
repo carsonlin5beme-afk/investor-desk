@@ -6,7 +6,14 @@ import {
 import Link from "next/link";
 import { BrandMonogram, BrandWordmark } from "@/components/Brand";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ArrowRight,
   ArrowUpRight,
@@ -60,8 +67,18 @@ import { OptionsExplorer } from "./studio/OptionsExplorer";
 import { CommandPalette, type CommandItem } from "./studio/CommandPalette";
 import styles from "./dashboard-polish.module.css";
 import { OrbitRefreshIcon, OrbitVisibilityIcon } from "./SpaceControlIcons";
+import { SidebarAsteroids } from "./SidebarAsteroids";
+import { SidebarRings } from "./SidebarRings";
 
 type View = "overview" | "studio" | "journal";
+
+// Keep the complete amount on one line even for unusually large portfolios.
+function amountFit(value: number): CSSProperties {
+  return {
+    "--value-fit": `${160 / money(value, 0).length}cqi`,
+  } as CSSProperties;
+}
+
 export function InvestorDesk({ portfolioId }: { portfolioId?: string }) {
   const router = useRouter();
   const [data, setData] = useState<DeskData | null>(null),
@@ -413,25 +430,105 @@ export function InvestorDesk({ portfolioId }: { portfolioId?: string }) {
         : (active?.name ?? "Portfolio overview");
   return (
     <div
-      className={`desk-shell ${styles.dashboard} ${mobileNav ? "nav-open" : ""} ${prefs.privacy ? "privacy-mode" : ""} ${presentation ? "presentation-mode" : ""}`}
+      className={`desk-shell ${styles.dashboard} ${view === "overview" && selected.length ? styles.populated : ""} ${mobileNav ? "nav-open" : ""} ${prefs.privacy ? "privacy-mode" : ""} ${presentation ? "presentation-mode" : ""}`}
     >
       <a href="#workspace-main" className="skip-to-main">
         Skip to workspace
       </a>
-      <aside className="sidebar" inert={isMobile && !mobileNav}>
-        <Link href="/" className="brand">
-          <span
-            className="brand-mark"
-            aria-hidden="true"
-            style={{ flexShrink: 0 }}
-          >
-            <BrandMonogram decorative />
-          </span>
-          <span style={{ minWidth: 0, flex: 1 }}>
-            <BrandWordmark />
-            <small>THE BIGGER PICTURE</small>
-          </span>
-        </Link>
+      <aside
+        className={`sidebar ${styles.sidebar}`}
+        inert={isMobile && !mobileNav}
+      >
+        <span className={styles.sidebarStars} aria-hidden="true" />
+        <div className={styles.sidebarNavigation}>
+          <Link href="/" className="brand">
+            <span
+              className="brand-mark"
+              aria-hidden="true"
+              style={{ flexShrink: 0 }}
+            >
+              <BrandMonogram decorative />
+            </span>
+            <span style={{ minWidth: 0, flex: 1 }}>
+              <BrandWordmark />
+              <small>THE BIGGER PICTURE</small>
+            </span>
+          </Link>
+          <button className="sidebar-search" onClick={() => setCommand(true)}>
+            <Search size={17} />
+            <span>Search the desk</span>
+            <kbd>⌘ K</kbd>
+          </button>
+          <div className="workspace-label">YOUR WORKSPACE</div>
+          <nav aria-label="Workspace navigation">
+            {[
+              { id: "overview", label: "Overview", icon: LayoutDashboard },
+              {
+                id: "studio",
+                label: "Scenario studio",
+                icon: GitCompareArrows,
+              },
+              { id: "journal", label: "Thesis journal", icon: BookOpen },
+            ].map((n) => (
+              <button
+                key={n.id}
+                className={`nav-item ${view === n.id ? "active" : ""}`}
+                aria-current={view === n.id ? "page" : undefined}
+                onClick={() => changeView(n.id as View)}
+              >
+                <n.icon size={18} />
+                {n.label}
+              </button>
+            ))}
+          </nav>
+          <div className="nav-section-label">
+            <span>PORTFOLIOS</span>
+            <div>
+              <button
+                className="icon-button"
+                aria-label="Manage portfolios"
+                onClick={() => setModal("manager")}
+                disabled={!all.length}
+              >
+                <MoreHorizontal size={17} />
+              </button>
+              <button
+                className="icon-button"
+                aria-label="Create portfolio"
+                onClick={() => setModal("create")}
+              >
+                <Plus size={17} />
+              </button>
+            </div>
+          </div>
+          {prefs.archived.length > 0 && (
+            <button
+              className="sidebar-text"
+              onClick={() => setShowArchived((v) => !v)}
+            >
+              {showArchived ? "Hide" : "Show"} archived portfolios
+            </button>
+          )}
+          <nav className="portfolio-nav" aria-label="Your portfolios">
+            {sortedPortfolios
+              .filter((p) => showArchived || !prefs.archived.includes(p.id))
+              .map((p) => (
+                <button
+                  key={p.id}
+                  className={`nav-item ${active?.id === p.id ? "portfolio-active" : ""}`}
+                  onClick={() => navigatePortfolio(p)}
+                >
+                  <span className="portfolio-dot" />
+                  <span>{p.name}</span>
+                  {prefs.pinned.includes(p.id) ? (
+                    <Pin size={12} />
+                  ) : (
+                    <ChevronRight size={14} />
+                  )}
+                </button>
+              ))}
+          </nav>
+        </div>
         <button
           className="icon-button mobile-nav-close"
           aria-label="Close navigation"
@@ -439,76 +536,63 @@ export function InvestorDesk({ portfolioId }: { portfolioId?: string }) {
         >
           <X size={22} />
         </button>
-        <button className="sidebar-search" onClick={() => setCommand(true)}>
-          <Search size={17} />
-          <span>Search the desk</span>
-          <kbd>⌘ K</kbd>
-        </button>
-        <div className="workspace-label">YOUR WORKSPACE</div>
-        <nav aria-label="Workspace navigation">
-          {[
-            { id: "overview", label: "Overview", icon: LayoutDashboard },
-            { id: "studio", label: "Scenario studio", icon: GitCompareArrows },
-            { id: "journal", label: "Thesis journal", icon: BookOpen },
-          ].map((n) => (
-            <button
-              key={n.id}
-              className={`nav-item ${view === n.id ? "active" : ""}`}
-              aria-current={view === n.id ? "page" : undefined}
-              onClick={() => changeView(n.id as View)}
+        <div className={styles.signalBeacon} aria-hidden="true">
+          <SidebarAsteroids />
+          <span className={styles.signalLine}>
+            <span className={styles.signalTrail} />
+            <span className={styles.signalPulse} />
+          </span>
+          <span className={styles.signalOrb}>
+            <span className={styles.signalShell} />
+            <span className={styles.signalCharge} />
+            <span className={styles.signalBloom} />
+            <span className={styles.signalShockwave} />
+            <svg
+              className={styles.signalDischarge}
+              viewBox="0 0 64 80"
+              focusable="false"
             >
-              <n.icon size={18} />
-              {n.label}
-            </button>
-          ))}
-        </nav>
-        <div className="nav-section-label">
-          <span>PORTFOLIOS</span>
-          <div>
-            <button
-              className="icon-button"
-              aria-label="Manage portfolios"
-              onClick={() => setModal("manager")}
-              disabled={!all.length}
-            >
-              <MoreHorizontal size={17} />
-            </button>
-            <button
-              className="icon-button"
-              aria-label="Create portfolio"
-              onClick={() => setModal("create")}
-            >
-              <Plus size={17} />
-            </button>
-          </div>
+              <defs>
+                <linearGradient
+                  id="sidebar-plasma-falloff"
+                  x1="32"
+                  y1="60"
+                  x2="32"
+                  y2="26"
+                  gradientUnits="userSpaceOnUse"
+                >
+                  <stop stopColor="#caffdf" stopOpacity="0.8" />
+                  <stop offset="0.35" stopColor="#95efc5" stopOpacity="0.5" />
+                  <stop offset="0.78" stopColor="#78d7b1" stopOpacity="0.18" />
+                  <stop offset="1" stopColor="#78d7b1" stopOpacity="0" />
+                </linearGradient>
+              </defs>
+              <g className={styles.signalPlasma}>
+                <path
+                  className={styles.signalPlasmaEnvelope}
+                  fill="url(#sidebar-plasma-falloff)"
+                  fillRule="evenodd"
+                  d="M28 60C25 54 28 50 28 46C29 41 33 39 31 34C35 37 34 41 36 44C38 38 33 33 36 26C36 32 41 37 40 42C39 47 42 50 37 55C35 58 35 60 32 61ZM32 54C29 51 31 48 33 46C32 50 35 51 32 54Z"
+                />
+                <path
+                  className={styles.signalPlasmaCore}
+                  d="M30 60C28 56 32 54 31 50C34 52 33 55 34 57L33 61Z"
+                />
+                <path
+                  className={styles.signalPlasmaFilament}
+                  d="M29 57C27 51 32 49 30 45M35 53C39 49 36 47 37 43"
+                />
+              </g>
+            </svg>
+            <span className={styles.signalParticles}>
+              <i />
+              <i />
+              <i />
+              <i />
+            </span>
+            <SidebarRings />
+          </span>
         </div>
-        <nav className="portfolio-nav" aria-label="Your portfolios">
-          {sortedPortfolios
-            .filter((p) => showArchived || !prefs.archived.includes(p.id))
-            .map((p) => (
-              <button
-                key={p.id}
-                className={`nav-item ${active?.id === p.id ? "portfolio-active" : ""}`}
-                onClick={() => navigatePortfolio(p)}
-              >
-                <span className="portfolio-dot" />
-                <span>{p.name}</span>
-                {prefs.pinned.includes(p.id) ? (
-                  <Pin size={12} />
-                ) : (
-                  <ChevronRight size={14} />
-                )}
-              </button>
-            ))}
-        </nav>
-        {prefs.archived.length > 0 && (
-          <button
-            className="sidebar-text"
-            onClick={() => setShowArchived((v) => !v)}
-          >
-            {showArchived ? "Hide" : "Show"} archived portfolios
-          </button>
-        )}
         <div className="sidebar-bottom">
           <button className="nav-item" onClick={() => setModal("settings")}>
             <Settings2 size={18} />
@@ -704,12 +788,6 @@ export function InvestorDesk({ portfolioId }: { portfolioId?: string }) {
               )}
             </div>
           )}
-          {data?.guest?.expired && (
-            <div className="error-box" role="status">
-              Your previous guest session ended. Saved profile portfolios are
-              unaffected.
-            </div>
-          )}
           {data?.user &&
             Boolean(
               data.pendingGuest?.portfolioCount ||
@@ -804,10 +882,13 @@ export function InvestorDesk({ portfolioId }: { portfolioId?: string }) {
                 </section>
               ) : (
                 <>
-                  <section className="net-worth-hero">
-                    <div className="hero-current">
+                  <section className={`net-worth-hero ${styles.overviewCards}`}>
+                    <div className={`hero-current ${styles.currentPanel}`}>
                       <span className="eyebrow">CURRENT PORTFOLIO VALUE</span>
-                      <div className="current-value private-value">
+                      <div
+                        className="current-value private-value"
+                        style={amountFit(current)}
+                      >
                         {money(current, 0)}
                       </div>
                       <span className="muted">
@@ -817,10 +898,8 @@ export function InvestorDesk({ portfolioId }: { portfolioId?: string }) {
                         {holdings.length === 1 ? "holding" : "holdings"}
                       </span>
                     </div>
-                    <span className="hero-connector">
-                      <ArrowRight size={26} />
-                    </span>
-                    <div className="hero-main">
+                    <div className={`hero-main ${styles.targetPanel}`}>
+                      <span className={styles.orbitAccent} aria-hidden="true" />
                       <span className="eyebrow">
                         {targetCount
                           ? `AT YOUR ${method === "model" ? "MODEL" : "INTRINSIC"} TARGETS`
@@ -828,7 +907,10 @@ export function InvestorDesk({ portfolioId }: { portfolioId?: string }) {
                       </span>
                       {targetCount ? (
                         <>
-                          <div className="hero-value private-value">
+                          <div
+                            className="hero-value private-value"
+                            style={amountFit(projected)}
+                          >
                             {money(projected, 0)}
                           </div>
                           <div className="hero-growth">
@@ -873,39 +955,39 @@ export function InvestorDesk({ portfolioId }: { portfolioId?: string }) {
                           </button>
                         </>
                       )}
+                      <button
+                        className="hero-aside"
+                        onClick={() => {
+                          setQuality("MISSING");
+                          setTab("Holdings");
+                          document
+                            .getElementById("holdings-panel")
+                            ?.scrollIntoView({
+                              behavior: matchMedia(
+                                "(prefers-reduced-motion: reduce)",
+                              ).matches
+                                ? "auto"
+                                : "smooth",
+                              block: "start",
+                            });
+                        }}
+                        aria-label={`Review ${holdings.length - targetCount} holdings without targets`}
+                      >
+                        <Target size={21} />
+                        <strong>
+                          {targetCount}
+                          <span> / {holdings.length}</span>
+                        </strong>
+                        <span>holdings targeted</span>
+                        <div className="coverage-track">
+                          <i
+                            style={{
+                              width: `${holdings.length ? (targetCount / holdings.length) * 100 : 0}%`,
+                            }}
+                          />
+                        </div>
+                      </button>
                     </div>
-                    <button
-                      className="hero-aside"
-                      onClick={() => {
-                        setQuality("MISSING");
-                        setTab("Holdings");
-                        document
-                          .getElementById("holdings-panel")
-                          ?.scrollIntoView({
-                            behavior: matchMedia(
-                              "(prefers-reduced-motion: reduce)",
-                            ).matches
-                              ? "auto"
-                              : "smooth",
-                            block: "start",
-                          });
-                      }}
-                      aria-label={`Review ${holdings.length - targetCount} holdings without targets`}
-                    >
-                      <Target size={21} />
-                      <strong>
-                        {targetCount}
-                        <span> / {holdings.length}</span>
-                      </strong>
-                      <span>holdings targeted</span>
-                      <div className="coverage-track">
-                        <i
-                          style={{
-                            width: `${holdings.length ? (targetCount / holdings.length) * 100 : 0}%`,
-                          }}
-                        />
-                      </div>
-                    </button>
                   </section>
                   <div className="metrics-grid">
                     {[
@@ -946,6 +1028,7 @@ export function InvestorDesk({ portfolioId }: { portfolioId?: string }) {
                     ].map((m) => (
                       <button
                         className="metric-card"
+                        data-value-state={m.value === 0 ? "zero" : "balance"}
                         key={m.label}
                         onClick={() => {
                           m.action();
@@ -966,7 +1049,10 @@ export function InvestorDesk({ portfolioId }: { portfolioId?: string }) {
                           <span>{m.label}</span>
                           <m.icon size={18} />
                         </div>
-                        <strong className="private-value">
+                        <strong
+                          className="private-value"
+                          style={amountFit(m.value)}
+                        >
                           {money(m.value, 0)}
                         </strong>
                         <small>
@@ -1048,6 +1134,7 @@ export function InvestorDesk({ portfolioId }: { portfolioId?: string }) {
                         holdings={holdings}
                         cash={cash}
                         filter={filter}
+                        onNewOrder={trade}
                         onFilter={(v) => {
                           setFilter(v);
                           setTab("Holdings");
@@ -1323,7 +1410,25 @@ export function InvestorDesk({ portfolioId }: { portfolioId?: string }) {
           portfolios={all}
           workspace={workspace}
           close={() => setModal(null)}
-          saved={() => void load()}
+          saved={() => void load(true)}
+          deleted={(id, confirmed = true) => {
+            setData((current) =>
+              current
+                ? {
+                    ...current,
+                    portfolios: current.portfolios.filter((p) => p.id !== id),
+                  }
+                : current,
+            );
+            setModal(null);
+            setToast(
+              confirmed
+                ? "Portfolio deleted"
+                : "Portfolio is no longer available",
+            );
+            void load(true);
+            if (portfolioId === id) router.push("/dashboard");
+          }}
         />
       )}
       {modal === "portfolio-picker" && (
@@ -1427,14 +1532,24 @@ export function InvestorDesk({ portfolioId }: { portfolioId?: string }) {
         >
           <div className="modal-body holding-detail">
             <div className="holding-detail-value">
-              <span>Current holding value</span>
+              <span>
+                {detail.projection.quoteSource === "manual"
+                  ? "Holding value · cost-basis estimate"
+                  : "Current holding value"}
+              </span>
               <strong>{money(detail.projection.currentMarketValue)}</strong>
               <span
                 className={
-                  detail.projection.unrealizedPnL >= 0 ? "positive" : "negative"
+                  detail.projection.quoteSource === "manual"
+                    ? "muted"
+                    : detail.projection.unrealizedPnL >= 0
+                      ? "positive"
+                      : "negative"
                 }
               >
-                {money(detail.projection.unrealizedPnL)} unrealized
+                {detail.projection.quoteSource === "manual"
+                  ? "Market profit / loss unavailable without a current quote"
+                  : `${money(detail.projection.unrealizedPnL)} unrealized`}
               </span>
             </div>
             <dl className="detail-list">
@@ -1456,13 +1571,18 @@ export function InvestorDesk({ portfolioId }: { portfolioId?: string }) {
               <div>
                 <dt>Quote source</dt>
                 <dd>
-                  {detail.projection.quoteSource}
+                  {detail.projection.quoteSource === "manual"
+                    ? "Manual entry"
+                    : detail.projection.quoteSource}
                   {detail.projection.priceEstimated
                     ? " · cost-basis estimate"
                     : detail.projection.valuationBasis === "OPTION_MIDPOINT"
                       ? " · midpoint estimate (not an execution price)"
                       : ""}
-                  {detail.projection.quoteStale ? " · stale" : ""}
+                  {detail.projection.quoteStale &&
+                  detail.projection.quoteSource !== "manual"
+                    ? " · stale"
+                    : ""}
                   {detail.projection.expirationAssumed
                     ? " · assumed expiration time"
                     : ""}
@@ -1473,7 +1593,9 @@ export function InvestorDesk({ portfolioId }: { portfolioId?: string }) {
                 <dd>
                   {detail.projection.quoteAsOf
                     ? new Date(detail.projection.quoteAsOf).toLocaleString()
-                    : "Unavailable"}
+                    : detail.projection.quoteSource === "manual"
+                      ? "No provider quote — manual entry"
+                      : "Unavailable"}
                 </dd>
               </div>
               {detail.optionDetails && (

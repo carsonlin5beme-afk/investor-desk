@@ -17,6 +17,11 @@ import {
 } from "@/lib/quote-status";
 import { OrderSuccessAudio } from "@/lib/order-success-audio";
 import { assertOptionNotExpired } from "@/lib/option-expiration";
+import {
+  isManualOptionSymbol,
+  manualOptionSymbol,
+  validateManualOptionTicket,
+} from "@/lib/manual-options";
 import { DeskModal } from "./DeskModal";
 import { OptionsExplorer } from "./studio/OptionsExplorer";
 type Quote = {
@@ -33,7 +38,7 @@ type Preview = {
   estimatedNotional: number;
   cashBefore: number;
   cashAfter: number;
-  quote: Quote;
+  quote: Quote | null;
   closedSession?: ClosedSessionBasis | null;
 };
 function requestErrorMessage(error: unknown): string {
@@ -42,6 +47,13 @@ function requestErrorMessage(error: unknown): string {
   return "Request failed. Please try again.";
 }
 
+const premiumLabel = (value: number) =>
+  new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 6,
+  }).format(value);
 const quoteTimeLabel = (value: string) =>
   Number.isFinite(Date.parse(value))
     ? new Intl.DateTimeFormat("en-US", {
@@ -93,6 +105,15 @@ export function OrderTicket({
     [suggestions, setSuggestions] = useState<
       { symbol: string; name: string }[]
     >([]);
+  const heldManual = Boolean(holding && isManualOptionSymbol(holding.symbol));
+  const [optionPricing, setOptionPricing] = useState<"PROVIDER" | "MANUAL">(
+    heldManual ? "MANUAL" : "PROVIDER",
+  );
+  const manual = asset === "OPTION" && optionPricing === "MANUAL";
+  const [manualStrike, setManualStrike] = useState(
+    heldManual ? holding!.optionDetails!.strike : "",
+  );
+  const [manualPremium, setManualPremium] = useState("");
   const [availability, setAvailability] = useState<QuoteStatus | null>(null);
   const [optionsAvailability, setOptionsAvailability] =
     useState<QuoteStatus | null>(null);
@@ -143,7 +164,7 @@ export function OrderTicket({
       replayed: boolean;
       quoteSource: string | null;
       quoteAsOf: string | null;
-      simulationBasis: "CLOSED_SESSION_LIMIT" | "QUOTE" | null;
+      simulationBasis: "CLOSED_SESSION_LIMIT" | "QUOTE" | "MANUAL" | null;
       position?: { id: string } | null;
     } | null>(null),
     [clientId, setClientId] = useState(""),
@@ -165,7 +186,7 @@ export function OrderTicket({
   const [retryPending, setRetryPending] = useState(false);
   const [quoteRefresh, setQuoteRefresh] = useState(0);
   const selectedContractSymbol =
-    asset === "OPTION" ? contract?.contractSymbol : undefined;
+    asset === "OPTION" && !manual ? contract?.contractSymbol : undefined;
   const heldExpiration =
     holding?.optionDetails?.underlying === symbol
       ? holding.optionDetails.expiration.slice(0, 10)
@@ -196,15 +217,38 @@ export function OrderTicket({
       /* Preference still works. */
     }
   };
+  let manualContractSymbol: string | undefined;
+  if (manual) {
+    try {
+      manualContractSymbol = manualOptionSymbol({
+        underlying: symbol,
+        right,
+        strike: Number(manualStrike),
+        expiration,
+      });
+    } catch {
+      /* Incomplete input is explained before preview. */
+    }
+  }
   const payload = {
     portfolioId: portfolio.id,
     assetClass: asset,
     symbol,
     side,
     quantity: Number(quantity),
-    orderType,
-    ...(orderType === "LIMIT" ? { limitPrice: Number(limit) } : {}),
-    ...(asset === "OPTION" && contract
+    orderType: manual ? "MARKET" : orderType,
+    ...(!manual && orderType === "LIMIT" ? { limitPrice: Number(limit) } : {}),
+    ...(manual
+      ? {
+          optionPricing: "MANUAL" as const,
+          manualPremium: Number(manualPremium),
+          optionContractSymbol: manualContractSymbol,
+          optionRight: right,
+          optionStrike: Number(manualStrike),
+          optionExpiration: expiration,
+        }
+      : {}),
+    ...(asset === "OPTION" && !manual && contract
       ? {
           optionContractSymbol: contract.contractSymbol,
           optionRight: contract.right,
@@ -231,7 +275,7 @@ export function OrderTicket({
     return () => clearInterval(t);
   }, []);
   useEffect(() => {
-    if (query === symbol || !query.trim()) {
+    if (manual || query === symbol || !query.trim()) {
       setSuggestions([]);
       return;
     }
@@ -257,9 +301,9 @@ export function OrderTicket({
       clearTimeout(t);
       c.abort();
     };
-  }, [query, symbol]);
+  }, [query, symbol, manual]);
   useEffect(() => {
-    if (!symbol) {
+    if (!symbol || manual) {
       setQuote(null);
       setQuoteLoading(false);
       setAvailability(null);
@@ -310,9 +354,9 @@ export function OrderTicket({
       clearInterval(t);
       c.abort();
     };
-  }, [symbol, quoteRefresh]);
+  }, [symbol, quoteRefresh, manual]);
   useEffect(() => {
-    if (asset !== "OPTION" || !symbol) return;
+    if (asset !== "OPTION" || manual || !symbol) return;
     const c = new AbortController();
     setExpirations(heldExpiration ? [heldExpiration] : []);
     setOptionsAvailability(null);
@@ -352,9 +396,9 @@ export function OrderTicket({
         }
       });
     return () => c.abort();
-  }, [symbol, asset, quoteRefresh, heldExpiration]);
+  }, [symbol, asset, quoteRefresh, heldExpiration, manual]);
   useEffect(() => {
-    if (asset !== "OPTION" || !expiration) return;
+    if (asset !== "OPTION" || manual || !expiration) return;
     const c = new AbortController();
     setChain([]);
     setLoading(true);
@@ -398,7 +442,7 @@ export function OrderTicket({
       clearInterval(timer);
       c.abort();
     };
-  }, [asset, symbol, expiration, right, quoteRefresh]);
+  }, [asset, symbol, expiration, right, quoteRefresh, manual]);
   useEffect(() => {
     setContractAvailability(null);
     setContractLoading(Boolean(selectedContractSymbol));
@@ -463,12 +507,22 @@ export function OrderTicket({
     setQuantity("");
   }
   const executable = asset === "OPTION" ? contract : quote;
-  const price = side === "BUY" ? executable?.ask : executable?.bid;
+  const price = manual
+    ? manualPremium.trim()
+      ? Number(manualPremium)
+      : null
+    : side === "BUY"
+      ? executable?.ask
+      : executable?.bid;
   const owned =
     portfolio.positions.find(
       (p) =>
-        p.symbol === (asset === "OPTION" ? contract?.contractSymbol : symbol) &&
-        p.assetClass === asset,
+        p.symbol ===
+          (manual
+            ? manualContractSymbol
+            : asset === "OPTION"
+              ? contract?.contractSymbol
+              : symbol) && p.assetClass === asset,
     )?.quantity ?? 0;
   const estimated =
     Number(quantity) * (price ?? 0) * (asset === "OPTION" ? 100 : 1);
@@ -492,8 +546,9 @@ export function OrderTicket({
       setLimit(String(side === "BUY" ? quote.ask : quote.bid));
     }
   }, [asset, symbol, side, closed, closedValid, quote, retryPending]);
-  const activeStatus =
-    asset === "OPTION"
+  const activeStatus = manual
+    ? null
+    : asset === "OPTION"
       ? contract
         ? (contractAvailability ??
           quoteStatus({
@@ -534,34 +589,45 @@ export function OrderTicket({
       expiryBlocker = requestErrorMessage(error);
     }
   }
-  const previewBlocker = !symbol
-    ? "Choose a symbol to begin."
-    : expiryBlocker
-      ? expiryBlocker
-      : asset === "OPTION" && contractLoading
-        ? "Loading the selected contract quote..."
-        : query !== symbol
-          ? "Select a ticker or press Enter to confirm it."
-          : activeStatus?.blocking
-            ? activeStatus.message
-            : closed && orderType !== "LIMIT"
-              ? "Use a limit order with this closed-session quote."
-              : orderType === "LIMIT" &&
-                  (!Number.isFinite(Number(limit)) || Number(limit) <= 0)
-                ? "Enter a positive limit price."
-                : asset === "OPTION" && !contract
-                  ? "Choose an expiration and select an option contract."
-                  : !validPrice
-                    ? quoteLoading
-                      ? "Loading a quote..."
-                      : "A positive bid/ask quote is required before previewing an order."
-                    : !Number.isFinite(Number(quantity)) ||
-                        Number(quantity) <= 0
-                      ? "Enter the number of shares or contracts to trade."
-                      : asset === "OPTION" &&
-                          !Number.isInteger(Number(quantity))
-                        ? "Options require a whole number of contracts."
-                        : "";
+  let manualBlocker = "";
+  if (manual) {
+    try {
+      validateManualOptionTicket({ ...payload, optionPricing: "MANUAL" });
+      assertOptionNotExpired(expiration, symbol, now);
+    } catch (error) {
+      manualBlocker = requestErrorMessage(error);
+    }
+  }
+  const previewBlocker = manual
+    ? manualBlocker
+    : !symbol
+      ? "Choose a symbol to begin."
+      : expiryBlocker
+        ? expiryBlocker
+        : asset === "OPTION" && contractLoading
+          ? "Loading the selected contract quote..."
+          : query !== symbol
+            ? "Select a ticker or press Enter to confirm it."
+            : activeStatus?.blocking
+              ? activeStatus.message
+              : closed && orderType !== "LIMIT"
+                ? "Use a limit order with this closed-session quote."
+                : orderType === "LIMIT" &&
+                    (!Number.isFinite(Number(limit)) || Number(limit) <= 0)
+                  ? "Enter a positive limit price."
+                  : asset === "OPTION" && !contract
+                    ? "Choose an expiration and select an option contract."
+                    : !validPrice
+                      ? quoteLoading
+                        ? "Loading a quote..."
+                        : "A positive bid/ask quote is required before previewing an order."
+                      : !Number.isFinite(Number(quantity)) ||
+                          Number(quantity) <= 0
+                        ? "Enter the number of shares or contracts to trade."
+                        : asset === "OPTION" &&
+                            !Number.isInteger(Number(quantity))
+                          ? "Options require a whole number of contracts."
+                          : "";
   async function review(e: React.FormEvent) {
     e.preventDefault();
     if (submitting.current || retryPending) return;
@@ -662,7 +728,7 @@ export function OrderTicket({
   return (
     <DeskModal
       title={result ? "Order filled" : "Trade simulator"}
-      kicker={`${portfolio.name} / ${mode === "demo" ? "Sample prices" : "Market data"}`}
+      kicker={`${portfolio.name} / ${manual ? "Manual entry" : mode === "demo" ? "Sample prices" : "Market data"}`}
       close={close}
       wide
       busy={busy}
@@ -713,7 +779,9 @@ export function OrderTicket({
                     ? "Check order result"
                     : preview?.closedSession
                       ? "Simulate limit order"
-                      : "Execute simulated order"}
+                      : manual
+                        ? "Record manual trade"
+                        : "Execute simulated order"}
                 <ArrowRight size={17} />
               </button>
             ) : (
@@ -755,7 +823,8 @@ export function OrderTicket({
           <p>
             {side === "BUY" ? "Bought" : "Sold"} {num(Number(quantity))}{" "}
             {asset === "OPTION" ? "contracts of" : "shares of"} {symbol} at{" "}
-            {money(result.fillPrice)}.
+            {manual ? premiumLabel(result.fillPrice) : money(result.fillPrice)}
+            {manual ? " per share" : ""}.
           </p>
           <div className="scenario-preview">
             <span>Total {side === "BUY" ? "debit" : "credit"}</span>
@@ -768,6 +837,12 @@ export function OrderTicket({
           <p className="fine-print">
             Simulation only. No order was sent to a broker.
           </p>
+          {result.simulationBasis === "MANUAL" && (
+            <p className="execution-provenance">
+              Manual entry · Your entered premium per share. No market quote was
+              used.
+            </p>
+          )}
           {result.quoteAsOf && (
             <p className="execution-provenance">
               {result.simulationBasis === "CLOSED_SESSION_LIMIT"
@@ -795,6 +870,7 @@ export function OrderTicket({
                 setResult(null);
                 setPreview(null);
                 setQuantity("");
+                if (manual) setManualPremium("");
               }}
             >
               Another order
@@ -812,6 +888,7 @@ export function OrderTicket({
               <div className="segmented">
                 <button
                   type="button"
+                  disabled={heldManual}
                   aria-pressed={asset === "EQUITY"}
                   className={asset === "EQUITY" ? "active" : ""}
                   onClick={() => {
@@ -835,101 +912,161 @@ export function OrderTicket({
                 <strong>{money(portfolio.cashBalance)}</strong>
               </div>
             </div>
-            <div className="ticket-grid">
-              <div className="symbol-search">
-                <label>
-                  Symbol or company
-                  <div className="input-icon">
-                    <Search size={17} />
-                    <input
-                      role="combobox"
-                      aria-expanded={suggestions.length > 0}
-                      aria-controls={searchId}
-                      aria-autocomplete="list"
-                      aria-activedescendant={
-                        suggestions[suggestionIndex]
-                          ? `${searchId}-${suggestionIndex}`
-                          : undefined
-                      }
-                      autoComplete="off"
-                      placeholder="Ticker or company name"
-                      value={query}
-                      onChange={(e) => {
-                        setQuery(e.target.value.toUpperCase());
-                        setSuggestionNavigated(false);
-                        setSuggestions([]);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-                          e.preventDefault();
-                          setSuggestionNavigated(true);
-                          setSuggestionIndex(
-                            (i) =>
-                              (i +
-                                (e.key === "ArrowDown" ? 1 : -1) +
-                                Math.max(suggestions.length, 1)) %
-                              Math.max(suggestions.length, 1),
-                          );
-                        }
-                        if (e.key === "Escape" && suggestions.length) {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          setSuggestions([]);
-                        }
-                        if (e.key === "Enter" && query !== symbol) {
-                          e.preventDefault();
-                          chooseSymbol(
-                            suggestionsQuery !== query
-                              ? query.trim()
-                              : suggestionNavigated
-                                ? (suggestions[suggestionIndex]?.symbol ??
-                                  query.trim())
-                                : (suggestions.find(
-                                    (item) => item.symbol === query.trim(),
-                                  )?.symbol ??
-                                  suggestions[0]?.symbol ??
-                                  query.trim()),
-                          );
-                        }
-                      }}
-                      onBlur={() => {
-                        if (
-                          query.trim() &&
-                          query !== symbol &&
-                          !suggestions.length
-                        )
-                          chooseSymbol(query.trim());
-                      }}
-                    />
-                  </div>
-                </label>
-                {suggestions.length > 0 && (
-                  <div
-                    className="suggestions"
-                    id={searchId}
-                    role="listbox"
-                    aria-label="Matching instruments"
+            {asset === "OPTION" && (
+              <>
+                <div
+                  className="segmented"
+                  role="group"
+                  aria-label="Option pricing"
+                >
+                  <button
+                    type="button"
+                    disabled={Boolean(holding)}
+                    aria-pressed={!manual}
+                    className={!manual ? "active" : ""}
+                    onClick={() => setOptionPricing("PROVIDER")}
                   >
-                    {suggestions.map((s, index) => (
-                      <button
-                        type="button"
-                        key={s.symbol}
-                        id={`${searchId}-${index}`}
-                        role="option"
-                        aria-selected={index === suggestionIndex}
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => chooseSymbol(s.symbol)}
-                      >
-                        <strong>{s.symbol}</strong>
-                        <span>{s.name}</span>
-                      </button>
-                    ))}
-                  </div>
+                    Provider prices
+                  </button>
+                  <button
+                    type="button"
+                    disabled={Boolean(holding)}
+                    aria-pressed={manual}
+                    className={manual ? "active" : ""}
+                    onClick={() => setOptionPricing("MANUAL")}
+                  >
+                    Manual entry
+                  </button>
+                </div>
+                {manual && (
+                  <p className="info-box">
+                    Record a simulated long call or put using your own premium.
+                    Standard 100-share contracts. Contract listing and current
+                    market price are unverified. Manual holdings stay separate
+                    from provider-priced holdings.
+                  </p>
                 )}
-              </div>
+              </>
+            )}
+            <div className="ticket-grid">
+              {manual ? (
+                <label>
+                  Underlying ticker
+                  <input
+                    required
+                    value={query}
+                    disabled={heldManual}
+                    placeholder="e.g. BTG"
+                    maxLength={10}
+                    onChange={(event) => {
+                      const value = event.target.value.toUpperCase().trim();
+                      setQuery(value);
+                      setSymbol(value);
+                    }}
+                  />
+                </label>
+              ) : (
+                <div className="symbol-search">
+                  <label>
+                    Symbol or company
+                    <div className="input-icon">
+                      <Search size={17} />
+                      <input
+                        role="combobox"
+                        aria-expanded={suggestions.length > 0}
+                        aria-controls={searchId}
+                        aria-autocomplete="list"
+                        aria-activedescendant={
+                          suggestions[suggestionIndex]
+                            ? `${searchId}-${suggestionIndex}`
+                            : undefined
+                        }
+                        autoComplete="off"
+                        placeholder="Ticker or company name"
+                        value={query}
+                        onChange={(e) => {
+                          setQuery(e.target.value.toUpperCase());
+                          setSuggestionNavigated(false);
+                          setSuggestions([]);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                            e.preventDefault();
+                            setSuggestionNavigated(true);
+                            setSuggestionIndex(
+                              (i) =>
+                                (i +
+                                  (e.key === "ArrowDown" ? 1 : -1) +
+                                  Math.max(suggestions.length, 1)) %
+                                Math.max(suggestions.length, 1),
+                            );
+                          }
+                          if (e.key === "Escape" && suggestions.length) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setSuggestions([]);
+                          }
+                          if (e.key === "Enter" && query !== symbol) {
+                            e.preventDefault();
+                            chooseSymbol(
+                              suggestionsQuery !== query
+                                ? query.trim()
+                                : suggestionNavigated
+                                  ? (suggestions[suggestionIndex]?.symbol ??
+                                    query.trim())
+                                  : (suggestions.find(
+                                      (item) => item.symbol === query.trim(),
+                                    )?.symbol ??
+                                    suggestions[0]?.symbol ??
+                                    query.trim()),
+                            );
+                          }
+                        }}
+                        onBlur={() => {
+                          if (
+                            query.trim() &&
+                            query !== symbol &&
+                            !suggestions.length
+                          )
+                            chooseSymbol(query.trim());
+                        }}
+                      />
+                    </div>
+                  </label>
+                  {suggestions.length > 0 && (
+                    <div
+                      className="suggestions"
+                      id={searchId}
+                      role="listbox"
+                      aria-label="Matching instruments"
+                    >
+                      {suggestions.map((s, index) => (
+                        <button
+                          type="button"
+                          key={s.symbol}
+                          id={`${searchId}-${index}`}
+                          role="option"
+                          aria-selected={index === suggestionIndex}
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => chooseSymbol(s.symbol)}
+                        >
+                          <strong>{s.symbol}</strong>
+                          <span>{s.name}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
               <label>
                 Action
-                <select value={side} onChange={(e) => setSide(e.target.value)}>
+                <select
+                  value={side}
+                  onChange={(e) => {
+                    setSide(e.target.value);
+                    if (manual) setManualPremium("");
+                  }}
+                >
                   <option value="BUY">
                     {asset === "OPTION" ? "Buy to open" : "Buy"}
                   </option>
@@ -939,7 +1076,7 @@ export function OrderTicket({
                 </select>
               </label>
             </div>
-            {!symbol && (
+            {!symbol && !manual && (
               <div className="ticket-intro">
                 <p>
                   Start with a symbol, then choose the position you want to
@@ -961,7 +1098,7 @@ export function OrderTicket({
                 )}
               </div>
             )}
-            {symbol && (
+            {symbol && !manual && (
               <div className="quote-strip">
                 <strong>{symbol}</strong>
                 <span>
@@ -1027,7 +1164,56 @@ export function OrderTicket({
                 )}
               </div>
             )}
-            {asset === "OPTION" && symbol && (
+            {manual && (
+              <>
+                <div className="ticket-grid three">
+                  <label>
+                    Expiration date
+                    <input
+                      required
+                      type="date"
+                      value={expiration}
+                      disabled={heldManual}
+                      onChange={(event) => setExpiration(event.target.value)}
+                    />
+                  </label>
+                  <label>
+                    Option right
+                    <select
+                      value={right}
+                      disabled={heldManual}
+                      onChange={(event) =>
+                        setRight(event.target.value as "CALL" | "PUT")
+                      }
+                    >
+                      <option value="CALL">Call</option>
+                      <option value="PUT">Put</option>
+                    </select>
+                  </label>
+                  <label>
+                    Strike price ($)
+                    <input
+                      required
+                      type="number"
+                      min="0.001"
+                      max="99999.999"
+                      step="0.001"
+                      value={manualStrike}
+                      disabled={heldManual}
+                      onChange={(event) => setManualStrike(event.target.value)}
+                      placeholder="Strike per share"
+                    />
+                  </label>
+                </div>
+                <p className="fine-print">
+                  Use the actual expiration date. Scenario estimates use its
+                  remaining time and a disclosed 60% volatility assumption when
+                  market IV is unavailable. Current value remains a cost-basis
+                  estimate.
+                </p>
+              </>
+            )}
+            {asset === "OPTION" && !manual && symbol && (
               <>
                 <div className="ticket-grid">
                   <label>
@@ -1240,19 +1426,36 @@ export function OrderTicket({
                   }
                 />
               </label>
-              <label>
-                Order type
-                <select
-                  value={orderType}
-                  onChange={(e) => setOrderType(e.target.value)}
-                >
-                  <option value="MARKET" disabled={Boolean(closed)}>
-                    Market
-                  </option>
-                  <option value="LIMIT">Limit (immediate or cancel)</option>
-                </select>
-              </label>
-              {orderType === "LIMIT" ? (
+              {manual ? (
+                <label>
+                  {side === "BUY" ? "Entry" : "Exit"} premium per share ($)
+                  <input
+                    required
+                    type="number"
+                    min="0.000001"
+                    max="1000000"
+                    step="0.000001"
+                    value={manualPremium}
+                    onChange={(event) => setManualPremium(event.target.value)}
+                    placeholder="Enter your premium"
+                  />
+                  <small>1 contract = 100 × this premium</small>
+                </label>
+              ) : (
+                <label>
+                  Order type
+                  <select
+                    value={orderType}
+                    onChange={(e) => setOrderType(e.target.value)}
+                  >
+                    <option value="MARKET" disabled={Boolean(closed)}>
+                      Market
+                    </option>
+                    <option value="LIMIT">Limit (immediate or cancel)</option>
+                  </select>
+                </label>
+              )}
+              {!manual && orderType === "LIMIT" ? (
                 <label>
                   Limit price ($)
                   <input
@@ -1330,7 +1533,7 @@ export function OrderTicket({
                 ))}
               </div>
             )}
-            {orderType === "LIMIT" && (
+            {!manual && orderType === "LIMIT" && (
               <p className="info-box">
                 Immediate or cancel: a buy needs an ask at or below your limit;
                 a sell needs a bid at or above it. An uncrossed order will not
@@ -1346,10 +1549,14 @@ export function OrderTicket({
                     : undefined
                 }
               >
-                {price != null ? money(estimated) : "No executable quote"}
+                {price != null
+                  ? money(estimated)
+                  : manual
+                    ? "Enter a premium"
+                    : "No executable quote"}
               </strong>
             </div>
-            {asset === "OPTION" && contract && side === "BUY" && (
+            {asset === "OPTION" && !manual && contract && side === "BUY" && (
               <p className="fine-print">
                 Expiration break-even:{" "}
                 {price == null
@@ -1364,6 +1571,7 @@ export function OrderTicket({
               </p>
             )}
             {asset === "OPTION" &&
+              !manual &&
               side === "BUY" &&
               contract &&
               quote?.mark != null &&
@@ -1390,9 +1598,9 @@ export function OrderTicket({
                 </details>
               )}
             <p className="fine-print">
-              No brokerage connection. Long positions only. Zero fees. Market
-              buys fill at ask; sells at bid. Uncrossed limits are not queued.
-              Prices can change between preview and execution.
+              {manual
+                ? "Simulation only. Your entered premium sets this fill; it does not create a live market mark. Long positions only. Zero fees. No order is sent to a broker."
+                : "No brokerage connection. Long positions only. Zero fees. Market buys fill at ask; sells at bid. Uncrossed limits are not queued. Prices can change between preview and execution."}
             </p>
           </fieldset>
           {error && (
@@ -1408,9 +1616,19 @@ export function OrderTicket({
               </div>
               <p>
                 {side} {num(Number(quantity))}{" "}
-                {asset === "OPTION" ? "contracts" : "shares"} of {symbol} at
-                approximately {money(preview.estimatedFillPrice)}.
-                {contract && (
+                {asset === "OPTION" ? "contracts" : "shares"} of {symbol} at{" "}
+                {manual
+                  ? premiumLabel(preview.estimatedFillPrice)
+                  : `approximately ${money(preview.estimatedFillPrice)}`}
+                {manual ? " per share" : ""}.
+                {manual && (
+                  <span>
+                    {" "}
+                    {right} · {money(Number(manualStrike), 3)} strike ·{" "}
+                    {expiration}. Manual premium per share; no quote used.
+                  </span>
+                )}
+                {!manual && contract && (
                   <span>
                     {" "}
                     {contract.right} · {money(contract.strike)} strike ·{" "}
@@ -1434,7 +1652,7 @@ export function OrderTicket({
               <small>
                 {expired
                   ? "Preview expired. Refresh before executing."
-                  : `Preview valid for ${Math.min(60, Math.max(0, Math.ceil((Math.min(previewAt + 60000, preview.closedSession ? Date.parse(preview.closedSession.validUntil) : Infinity) - now) / 1000)))}s. ${preview.closedSession ? "Execution rechecks this quote and market session." : "Execution refreshes the quote."}`}
+                  : `Preview valid for ${Math.min(60, Math.max(0, Math.ceil((Math.min(previewAt + 60000, preview.closedSession ? Date.parse(preview.closedSession.validUntil) : Infinity) - now) / 1000)))}s. ${manual ? "Execution rechecks funds, quantity and expiration." : preview.closedSession ? "Execution rechecks this quote and market session." : "Execution refreshes the quote."}`}
               </small>
             </div>
           )}
