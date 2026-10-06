@@ -1,3 +1,9 @@
+import { defaultMarginSettings, marginSettingsSchema } from "@/lib/margin";
+import {
+  marginStorage,
+  portfolioMarginSettings,
+  portfolioValues,
+} from "@/server/services/portfolio-margin";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import {
@@ -80,13 +86,19 @@ export async function presentGuest(p: GuestPortfolio) {
     baseCurrency: p.baseCurrency,
     startingCash: p.startingCash.toNumber(),
     cashBalance,
-    currentValue: cashBalance + equitiesValue + optionsValue,
+    ...portfolioValues(
+      cashBalance,
+      equitiesValue,
+      optionsValue,
+      portfolioMarginSettings(p),
+    ),
     equitiesValue,
     optionsValue,
     positionCount: positions.length,
     ...aggregatePortfolioProjection(
       cashBalance,
       positions.map((p) => p.projection),
+      portfolioMarginSettings(p).debt,
     ),
     positions,
     orders: [...p.orders].reverse().slice(0, 80),
@@ -108,6 +120,7 @@ export function createPortfolio(state: GuestWorkspace, body: unknown) {
     ...input,
     startingCash: new D(input.startingCash),
     cashBalance: new D(input.startingCash),
+    ...marginStorage(defaultMarginSettings),
     createdAt: now,
     updatedAt: now,
     positions: [],
@@ -126,6 +139,18 @@ export function createPortfolio(state: GuestWorkspace, body: unknown) {
   state.portfolios.push(p);
   return p;
 }
+export function updateGuestMargin(
+  state: GuestWorkspace,
+  id: string,
+  body: unknown,
+) {
+  const settings = marginSettingsSchema.parse(body);
+  const portfolio = ownedPortfolio(state, id);
+  Object.assign(portfolio, marginStorage(settings));
+  portfolio.updatedAt = new Date();
+  return settings;
+}
+
 export function adjustCash(state: GuestWorkspace, id: string, body: unknown) {
   const input = cashAdjustSchema.parse(body),
     p = ownedPortfolio(state, id);

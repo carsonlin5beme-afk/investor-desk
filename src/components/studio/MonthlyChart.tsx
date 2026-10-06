@@ -20,7 +20,7 @@ export function MonthlyChart({
   const low = Math.min(...values),
     high = Math.max(...values);
   const padding = Math.max((high - low) * 0.12, Math.abs(high) * 0.025, 1);
-  const min = Math.max(0, low - padding),
+  const min = low < 0 ? low - padding : Math.max(0, low - padding),
     max = high + padding;
   const x = (index: number) =>
     20 + (index / Math.max(1, rows.length - 1)) * 960;
@@ -37,17 +37,18 @@ export function MonthlyChart({
       return point;
     })
     .join(" ");
+  const financed = rows.some((row) => (row.principal ?? 0) > 0);
   return (
     <div className={styles.chart}>
       <div className={styles.chartLabels}>
-        <span>Modeled portfolio value · USD</span>
+        <span>Modeled portfolio {financed ? "net equity" : "value"} · USD</span>
         <span className="financial-number private-value">
           {compact(low)} — {compact(high)}
         </span>
       </div>
       <svg
         role="img"
-        aria-label="Monthly portfolio value path. Exact values and month selection are below."
+        aria-label={`Monthly portfolio ${financed ? "net equity" : "value"} path. Exact values and month selection are below.`}
         viewBox="0 0 1000 180"
         preserveAspectRatio="none"
       >

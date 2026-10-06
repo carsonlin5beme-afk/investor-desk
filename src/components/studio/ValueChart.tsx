@@ -55,7 +55,7 @@ export function ValueChart({
       ? money(v, tick && v >= 100 ? 0 : 2)
       : `${Number(v.toFixed(2))}%`;
   const domain = useMemo(() => {
-    const values = shown.flatMap((s) => s.values);
+    const values = shown.flatMap((s) => s.values).filter(Number.isFinite);
     if (reference != null) values.push(reference);
     let low = Math.min(...values, 0),
       high = Math.max(...values, 1);
@@ -96,6 +96,14 @@ export function ValueChart({
     );
   };
   const ticks = width < 400 ? [0, 0.5, 1] : [0, 0.25, 0.5, 0.75, 1];
+  if (shown.some((s) => s.values.some((v) => !Number.isFinite(v))))
+    return (
+      <div className="value-chart" ref={root}>
+        <p role="status">
+          Scenario totals are unavailable. Check financing and model inputs.
+        </p>
+      </div>
+    );
   return (
     <div className="value-chart" ref={root}>
       {series.length > 1 && (

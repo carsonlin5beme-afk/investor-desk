@@ -1,3 +1,7 @@
+import {
+  marginStorage,
+  portfolioMarginSettings,
+} from "@/server/services/portfolio-margin";
 import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
@@ -54,7 +58,13 @@ export async function importGuest(key: string, userId: string) {
           );
         for (const p of state.portfolios) {
           const { positions, orders, cashLedgerEntries, ...portfolio } = p;
-          await tx.portfolio.create({ data: { ...portfolio, userId } });
+          await tx.portfolio.create({
+            data: {
+              ...portfolio,
+              ...marginStorage(portfolioMarginSettings(p)),
+              userId,
+            },
+          });
           for (const position of positions) {
             const { optionDetails, targetScenario, ...record } = position;
             await tx.position.create({ data: record });

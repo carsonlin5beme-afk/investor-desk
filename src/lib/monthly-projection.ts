@@ -1,6 +1,13 @@
 import { blackScholesPrice } from "@/server/domain/black-scholes";
 import { resolveOptionExpiry } from "./option-expiration";
 import {
+  aggregateMargin,
+  defaultMarginSettings,
+  elapsedMarginDays,
+  projectMarginDebt,
+  type MarginSummary,
+} from "./margin";
+import {
   monthlyPlanSchema,
   monthlyValuationAt,
   resolveMonthlyTarget,
@@ -8,7 +15,11 @@ import {
   validateMonthlySnapshot,
   type MonthlyPlan,
 } from "./monthly-scenario";
-import type { SavedScenario, ScenarioAsset } from "./studio";
+import {
+  validateScenarioPortfolios,
+  type SavedScenario,
+  type ScenarioAsset,
+} from "./studio";
 
 // All displayed position values are rounded once; aggregate integer cents.
 const money = (value: number): number | null => {
@@ -25,6 +36,7 @@ const sum = (values: (number | null)[]): number | null => {
 };
 export type MonthlyPosition = {
   id: string;
+  portfolioId: string;
   label: string;
   symbol: string;
   quantity: number;
@@ -45,6 +57,16 @@ export type MonthlyPosition = {
   warnings: string[];
   reason: string | null;
 };
+export type MonthlyPortfolioMargin = {
+  id: string;
+  name: string;
+  /** Captured cash plus this account's simulated option expiry proceeds. */
+  cash: number | null;
+  principal: number;
+  interest: number | null;
+  outstandingDebt: number | null;
+  marginSummary: MarginSummary | null;
+};
 export type MonthlyResult = {
   date: string;
   at: string;
@@ -53,7 +75,16 @@ export type MonthlyResult = {
   equities: number | null;
   options: number | null;
   expiryProceeds: number | null;
+  grossTotal: number | null;
+  principal: number | null;
+  interest: number | null;
+  outstandingDebt: number | null;
+  netEquity: number | null;
+  /** Alias of netEquity for the monthly chart and existing row selection. */
   total: number | null;
+  portfolioMargins: MonthlyPortfolioMargin[];
+  marginSummary: MarginSummary | null;
+  /** Known gross assets only: never deduct debt from an incomplete subtotal. */
   knownSubtotal: number | null;
   profit: number | null;
   change: number | null;
@@ -62,6 +93,57 @@ export type MonthlyResult = {
   missingCount: number;
   unavailableReason: string | null;
 };
+
+/** Projected liabilities may exceed the entry cap while remaining calculable. */
+function projectedMarginSummary(
+  cash: number | null,
+  equities: number | null,
+  options: number | null,
+  debt: number | null,
+  maintenancePercent: number,
+): MarginSummary | null {
+  if (debt == null) return null;
+  const grossValue = sum([cash, equities, options]);
+  const netEquity = grossValue == null ? null : sum([grossValue, -debt]);
+  const marginEquity = sum([cash, equities, -debt]);
+  const maintenanceRequired =
+    equities == null ? null : money((maintenancePercent / 100) * equities);
+  const maintenanceExcess =
+    maintenanceRequired == null
+      ? null
+      : sum([marginEquity, -maintenanceRequired]);
+  if (
+    grossValue == null ||
+    netEquity == null ||
+    marginEquity == null ||
+    maintenanceRequired == null ||
+    maintenanceExcess == null
+  )
+    return null;
+  return {
+    debt,
+    grossValue,
+    netEquity,
+    marginEquity,
+    maintenanceRequired,
+    maintenanceExcess,
+    maintenanceShortfall: Math.max(0, -maintenanceExcess),
+  };
+}
+
+function aggregateMonthlyMargin(
+  summaries: (MarginSummary | null)[],
+): MarginSummary | null {
+  const result = aggregateMargin(summaries);
+  if (result == null) return null;
+  // Preserve shared per-account shortfalls while aggregating integer cents.
+  for (const field of Object.keys(result) as (keyof MarginSummary)[]) {
+    const value = sum(summaries.map((summary) => summary![field]));
+    if (value == null) return null;
+    result[field] = value;
+  }
+  return result;
+}
 
 /** Never skip a missing checkpoint, interpolate backwards or extrapolate. */
 export function expiryPrice(
@@ -130,6 +212,7 @@ function positionAt(
   }
   const result: MonthlyPosition = {
     id: asset.id,
+    portfolioId: asset.portfolioId,
     label: asset.label,
     symbol: path.symbol,
     quantity: asset.quantity,
@@ -235,11 +318,12 @@ function positionAt(
 /** Pure scenario arithmetic: never mutates holdings, ledger cash or quote state. */
 export function projectMonthly(snapshot: SavedScenario): MonthlyResult[] {
   if (!snapshot.monthly) return [];
+  validateScenarioPortfolios(snapshot);
   validateMonthlySnapshot(snapshot);
   const plan = monthlyPlanSchema.parse(snapshot.monthly);
   const capturedAt = Date.parse(snapshot.capturedAt);
   const cash = money(snapshot.cash);
-  const baseline = sum([
+  const grossBaseline = sum([
     cash,
     ...snapshot.assets.map((asset) =>
       asset.quantity === 0 ? 0 : money(asset.currentValue),
@@ -250,6 +334,12 @@ export function projectMonthly(snapshot: SavedScenario): MonthlyResult[] {
       asset.quantity === 0 ? 0 : money(asset.costBasis),
     ),
   );
+  const principal = sum(
+    (snapshot.portfolioSnapshots ?? []).map(
+      (portfolio) => portfolio.margin.debt,
+    ),
+  );
+  const baseline = principal == null ? null : sum([grossBaseline, -principal]);
   const checkpoints = plan.dates.map(monthlyValuationAt);
   const paths = new Map(plan.paths.map((path) => [path.symbol, path]));
   const terminals = new Map<string, ReturnType<typeof expiryPrice>>();
@@ -285,30 +375,124 @@ export function projectMonthly(snapshot: SavedScenario): MonthlyResult[] {
     const holdingsAndProceeds = sum(
       positions.map((position) => position.value),
     );
-    const total = sum([cash, holdingsAndProceeds]);
-    const profit =
-      total == null || holdingsAndProceeds == null || cost == null
+    const grossTotal = sum([cash, holdingsAndProceeds]);
+    const equities = sum(
+      positions
+        .filter((position) => position.kind === "equity")
+        .map((position) => position.holdingValue),
+    );
+    const options = sum(
+      positions
+        .filter((position) => position.kind === "option")
+        .map((position) => position.holdingValue),
+    );
+    const expiryProceeds = sum(
+      positions.map((position) => position.expiryProceeds),
+    );
+    const elapsedDays = elapsedMarginDays(snapshot.capturedAt, at);
+    const accountPositions = new Map<string, MonthlyPosition[]>();
+    for (const position of positions) {
+      const group = accountPositions.get(position.portfolioId) ?? [];
+      group.push(position);
+      accountPositions.set(position.portfolioId, group);
+    }
+    const portfolioMargins: MonthlyPortfolioMargin[] = (
+      snapshot.portfolioSnapshots ?? []
+    ).map((portfolio) => {
+      const owned = accountPositions.get(portfolio.id) ?? [];
+      const projection =
+        elapsedDays == null
+          ? null
+          : projectMarginDebt(portfolio.margin, elapsedDays);
+      // Cumulative interest is rounded once per account, never each day/month.
+      const interest = projection == null ? null : money(projection.interest);
+      const debt = sum([portfolio.margin.debt, interest]);
+      const proceeds = sum(
+        owned
+          .filter((position) => position.kind === "option")
+          .map((position) =>
+            position.expiryAt != null && at < Date.parse(position.expiryAt)
+              ? 0
+              : position.expiryProceeds,
+          ),
+      );
+      const accountCash = sum([money(portfolio.cash), proceeds]);
+      const accountEquities = sum(
+        owned
+          .filter((position) => position.kind === "equity")
+          .map((position) => position.holdingValue),
+      );
+      const accountOptions = sum(
+        owned
+          .filter((position) => position.kind === "option")
+          .map((position) => position.holdingValue),
+      );
+      return {
+        id: portfolio.id,
+        name: portfolio.name,
+        cash: accountCash,
+        principal: portfolio.margin.debt,
+        interest,
+        outstandingDebt: debt,
+        marginSummary: projectedMarginSummary(
+          accountCash,
+          accountEquities,
+          accountOptions,
+          debt,
+          portfolio.margin.maintenancePercent,
+        ),
+      };
+    });
+    const interest =
+      elapsedDays == null
         ? null
-        : money(holdingsAndProceeds - cost);
+        : sum(portfolioMargins.map((portfolio) => portfolio.interest));
+    const outstandingDebt =
+      principal == null ? null : sum([principal, interest]);
+    const netEquity =
+      outstandingDebt == null ? null : sum([grossTotal, -outstandingDebt]);
+    const marginSummary =
+      grossTotal == null || outstandingDebt == null
+        ? null
+        : snapshot.portfolioSnapshots
+          ? aggregateMonthlyMargin(
+              portfolioMargins.map((portfolio) => portfolio.marginSummary),
+            )
+          : projectedMarginSummary(
+              sum([cash, expiryProceeds]),
+              equities,
+              options,
+              0,
+              defaultMarginSettings.maintenancePercent,
+            );
+    const profit =
+      grossTotal == null || holdingsAndProceeds == null || cost == null
+        ? null
+        : sum([
+            holdingsAndProceeds,
+            -cost,
+            interest == null ? null : -interest,
+          ]);
     const change =
-      total == null || baseline == null ? null : money(total - baseline);
+      netEquity == null || baseline == null
+        ? null
+        : sum([netEquity, -baseline]);
     return {
       date,
       at: new Date(at).toISOString(),
       positions,
       cash,
-      equities: sum(
-        positions
-          .filter((position) => position.kind === "equity")
-          .map((position) => position.holdingValue),
-      ),
-      options: sum(
-        positions
-          .filter((position) => position.kind === "option")
-          .map((position) => position.holdingValue),
-      ),
-      expiryProceeds: sum(positions.map((position) => position.expiryProceeds)),
-      total,
+      equities,
+      options,
+      expiryProceeds,
+      grossTotal,
+      principal,
+      interest,
+      outstandingDebt,
+      netEquity,
+      total: netEquity,
+      portfolioMargins,
+      marginSummary,
       knownSubtotal: sum([
         ...(cash == null ? [] : [cash]),
         ...positions
@@ -318,19 +502,30 @@ export function projectMonthly(snapshot: SavedScenario): MonthlyResult[] {
       profit,
       change,
       changePercent:
-        change == null || !baseline ? null : (change / baseline) * 100,
-      costReturnPercent: profit == null || !cost ? null : (profit / cost) * 100,
+        change == null || baseline == null || baseline <= 0
+          ? null
+          : (change / baseline) * 100,
+      costReturnPercent:
+        profit == null || cost == null || cost <= 0
+          ? null
+          : (profit / cost) * 100,
       missingCount: positions.filter((position) => position.value == null)
         .length,
       unavailableReason:
         cash == null
           ? "Starting cash exceeds the supported calculation range."
-          : total == null &&
+          : grossTotal == null &&
               positions.every((position) => position.value != null)
             ? "The combined portfolio value exceeds the supported calculation range."
-            : baseline == null
-              ? "The captured value exceeds the supported calculation range; change versus snapshot is unavailable."
-              : null,
+            : elapsedDays == null
+              ? "Capture or projection dates are invalid; financing is unavailable."
+              : interest == null || outstandingDebt == null
+                ? "Financing exceeds the supported calculation range."
+                : baseline == null
+                  ? "The captured value exceeds the supported calculation range; change versus snapshot is unavailable."
+                  : cost == null
+                    ? "Holding costs exceed the supported calculation range; profit is unavailable."
+                    : null,
     };
   });
 }

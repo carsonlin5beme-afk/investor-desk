@@ -1,3 +1,4 @@
+import type { MarginSettings, MarginSummary } from "./margin";
 export type Projection = {
   currentMarketValue: number;
   currentPrice: number | null;
@@ -51,6 +52,12 @@ export type Portfolio = {
   cashBalance: number;
   startingCash: number;
   currentValue: number;
+  grossCurrentValue?: number;
+  netEquity?: number;
+  margin?: MarginSettings;
+  marginSummary?: MarginSummary;
+  grossProjectedValue?: number;
+  grossIntrinsicValue?: number;
   equitiesValue: number;
   optionsValue: number;
   projectedNetWorth: number;
@@ -111,7 +118,7 @@ export type Contract = {
   impliedVolatility: number | null;
 };
 export const money = (n: number | null | undefined, decimals = 2) =>
-  n == null
+  n == null || !Number.isFinite(n)
     ? "Unavailable"
     : new Intl.NumberFormat("en-US", {
         style: "currency",

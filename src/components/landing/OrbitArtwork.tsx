@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { mountLandingOrbit, type OrbitMotionState } from "@/lib/landing-orbit";
 import styles from "./orbit-hero.module.css";
@@ -36,24 +35,8 @@ export function OrbitArtwork() {
     mount();
     window.addEventListener("pagehide", leave);
     window.addEventListener("pageshow", restore);
-    const hero = stageElement.closest<HTMLElement>("[data-orbit-hero]");
-    const header = hero
-      ?.closest("[data-landing-page]")
-      ?.querySelector("header");
-    const fit = () => {
-      if (header && hero)
-        hero.style.setProperty(
-          "--landing-header-height",
-          `${header.getBoundingClientRect().height}px`,
-        );
-    };
-    const resize =
-      typeof ResizeObserver === "function" ? new ResizeObserver(fit) : null;
-    if (header) resize?.observe(header);
-    fit();
     return () => {
       leave();
-      resize?.disconnect();
       window.removeEventListener("pagehide", leave);
       window.removeEventListener("pageshow", restore);
     };
@@ -66,14 +49,24 @@ export function OrbitArtwork() {
         data-orbit-stage
         data-state="static"
       >
-        <Image
-          src="/landing/investor-orbit-v1.png"
-          alt=""
-          fill
-          priority
-          sizes="(max-width: 2000px) 100vw, 2000px"
-          className={styles.fallback}
-        />
+        <picture>
+          <source
+            media="(max-width: 760px)"
+            srcSet="/landing/investor-orbit-mobile.webp"
+            width={600}
+            height={2023}
+          />
+          {/* Captured from this renderer's initial pose, with the same camera. */}
+          <img
+            src="/landing/investor-orbit-desktop.webp"
+            alt=""
+            width={1600}
+            height={2512}
+            fetchPriority="high"
+            decoding="async"
+            className={styles.fallback}
+          />
+        </picture>
         <div ref={host} className={styles.canvasHost} aria-hidden="true" />
         <button
           type="button"

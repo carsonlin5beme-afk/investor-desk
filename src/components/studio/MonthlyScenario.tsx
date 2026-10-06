@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useRef, useState, type CSSProperties } from "react";
+import { useId, useMemo, useRef, useState, type CSSProperties } from "react";
 import { z } from "zod";
 import { CalendarDays, Copy, Plus, Save, Trash2 } from "lucide-react";
 import { money, num, type Portfolio } from "@/lib/desk-types";
@@ -7,6 +7,8 @@ import {
   scenarioSchema,
   snapshot,
   validateWorkspaceValue,
+  validateScenarioPortfolios,
+  validateScenarioTax,
   type SavedScenario,
 } from "@/lib/studio";
 import {
@@ -27,6 +29,8 @@ import { expiryPrice, projectMonthly } from "@/lib/monthly-projection";
 import { resolveOptionExpiry } from "@/lib/option-expiration";
 import { SaveState } from "./Controls";
 import { MonthlyChart } from "./MonthlyChart";
+import { TaxTracker } from "./TaxTracker";
+import { monthlyTaxSales } from "@/lib/scenario-tax-sales";
 import { useSessionDraft } from "./useSessionDraft";
 import type { WorkspaceController } from "./useWorkspace";
 import styles from "./monthly.module.css";
@@ -35,7 +39,12 @@ const draftSchema = scenarioSchema.extend({
   name: z.string().max(80),
   monthly: monthlyDraftPlanSchema.optional(),
 });
-const parseDraft = (value: unknown) => withMonthly(draftSchema.parse(value));
+const parseDraft = (value: unknown) => {
+  const parsed = withMonthly(draftSchema.parse(value));
+  validateScenarioPortfolios(parsed);
+  validateScenarioTax(parsed);
+  return parsed;
+};
 const monthLabel = (date: string, short = false) =>
   new Intl.DateTimeFormat("en-US", {
     month: short ? "short" : "long",
@@ -102,6 +111,7 @@ export function MonthlyScenario({
     [saved, setSaved] = useState(false);
   const [deleted, setDeleted] = useState<SavedScenario | null>(null);
   const revision = useRef(0);
+  const inputIds = useId();
   const month = Math.min(selected, plan.dates.length - 1);
   const entries = workspace.entries
     .filter((entry) => entry.key.startsWith("scenario:"))
@@ -119,7 +129,13 @@ export function MonthlyScenario({
             : (error as Error).message,
       };
     }
-  }, [working.assets, working.cash, working.capturedAt, working.monthly]);
+  }, [
+    working.assets,
+    working.cash,
+    working.capturedAt,
+    working.monthly,
+    working.portfolioSnapshots,
+  ]);
   const row = calculation.rows[month];
   const open = (scenario: SavedScenario) => {
     revision.current++;
@@ -158,6 +174,14 @@ export function MonthlyScenario({
           }),
         };
       }),
+    });
+  const changeStartingPrice = (symbol: string, raw: string) =>
+    changePlan({
+      paths: plan.paths.map((path) =>
+        path.symbol === symbol
+          ? { ...path, initialPrice: inputNumber(raw) }
+          : path,
+      ),
     });
   async function save() {
     setBusy(true);
@@ -203,8 +227,11 @@ export function MonthlyScenario({
       a.expiry.modelExpirationAt.getTime() -
       b.expiry.modelExpirationAt.getTime(),
   );
+  const principal =
+    working.portfolioSnapshots?.reduce((sum, p) => sum + p.margin.debt, 0) ?? 0;
   const snapshotValue =
-    working.cash +
+    working.cash -
+    principal +
     working.assets.reduce(
       (total, asset) => total + (asset.quantity === 0 ? 0 : asset.currentValue),
       0,
@@ -433,7 +460,9 @@ export function MonthlyScenario({
             aria-label={`${monthLabel(plan.dates[month])} totals`}
           >
             <div>
-              <dt>Portfolio value</dt>
+              <dt>
+                {principal > 0 ? "Portfolio net equity" : "Portfolio value"}
+              </dt>
               <dd
                 className={valueClass(row?.total)}
                 data-testid="monthly-total"
@@ -443,7 +472,10 @@ export function MonthlyScenario({
               >
                 {row?.total == null ? "Incomplete" : money(row.total)}
               </dd>
-              <small>Cash + shares + options + expiry proceeds</small>
+              <small>
+                Gross cash + holdings + expiry proceeds
+                {principal > 0 ? " − debt − new interest" : ""}
+              </small>
             </div>
             <div>
               <dt>Modeled profit vs cost</dt>
@@ -483,40 +515,78 @@ export function MonthlyScenario({
               Calendar month-end · 4 pm New York · planning dates, including
               weekends
             </span>
-            <button
-              className="text-button"
-              disabled={plan.dates.length >= 24}
-              onClick={() =>
-                changePlan({
-                  dates: [...plan.dates, nextMonthEnd(plan.dates.at(-1)!)],
-                  paths: plan.paths.map((path) => ({
-                    ...path,
-                    prices: [...path.prices, path.prices.at(-1) ?? null],
-                    ...(path.targetInputs && {
-                      targetInputs: {
-                        ...path.targetInputs,
-                        priceInputs: [
-                          ...path.targetInputs.priceInputs,
-                          path.targetInputs.priceInputs.at(-1) ?? "",
-                        ],
-                        marketCapInputs: [
-                          ...path.targetInputs.marketCapInputs,
-                          path.targetInputs.marketCapInputs.at(-1) ?? "",
-                        ],
-                      },
-                    }),
-                  })),
-                })
-              }
-            >
-              <Plus size={14} /> Add month
-            </button>
+            <div className={styles.horizonActions}>
+              <button
+                className="text-button"
+                disabled={plan.dates.length <= 1}
+                onClick={() =>
+                  changePlan({
+                    dates: plan.dates.slice(0, -1),
+                    paths: plan.paths.map((path) => ({
+                      ...path,
+                      prices: path.prices.slice(0, -1),
+                      ...(path.targetInputs && {
+                        targetInputs: {
+                          ...monthlyTargetInputs(path),
+                          priceInputs: path.targetInputs.priceInputs.slice(
+                            0,
+                            -1,
+                          ),
+                          marketCapInputs:
+                            path.targetInputs.marketCapInputs.slice(0, -1),
+                          returnInputs: monthlyTargetInputs(
+                            path,
+                          ).returnInputs.slice(0, -1),
+                        },
+                      }),
+                    })),
+                  })
+                }
+              >
+                <Trash2 size={14} /> Remove last month
+              </button>
+              <button
+                className="text-button"
+                disabled={plan.dates.length >= 24}
+                onClick={() =>
+                  changePlan({
+                    dates: [...plan.dates, nextMonthEnd(plan.dates.at(-1)!)],
+                    paths: plan.paths.map((path) => ({
+                      ...path,
+                      prices: [...path.prices, path.prices.at(-1) ?? null],
+                      ...(path.targetInputs && {
+                        targetInputs: {
+                          ...path.targetInputs,
+                          priceInputs: [
+                            ...path.targetInputs.priceInputs,
+                            path.targetInputs.priceInputs.at(-1) ?? "",
+                          ],
+                          marketCapInputs: [
+                            ...path.targetInputs.marketCapInputs,
+                            path.targetInputs.marketCapInputs.at(-1) ?? "",
+                          ],
+                          returnInputs: [
+                            ...monthlyTargetInputs(path).returnInputs,
+                            "",
+                          ],
+                        },
+                      }),
+                    })),
+                  })
+                }
+              >
+                <Plus size={14} /> Add month
+              </button>
+            </div>
           </div>
           {row && row.missingCount > 0 && (
             <p className={styles.notice} role="status">
               {row.missingCount} holding
               {row.missingCount === 1 ? " needs" : "s need"} an input or cannot
-              be modeled. Known subtotal:{" "}
+              be modeled.{" "}
+              {principal > 0
+                ? "Known gross asset subtotal:"
+                : "Known subtotal:"}{" "}
               <span className="private-value">{money(row.knownSubtotal)}</span>;
               this is not your full portfolio total.
             </p>
@@ -528,17 +598,25 @@ export function MonthlyScenario({
           )}
           <div className={styles.editGrid}>
             <section className={`panel ${styles.editor}`}>
-              <h3>Company targets for {monthLabel(plan.dates[month], true)}</h3>
+              <h3>Asset targets for {monthLabel(plan.dates[month], true)}</h3>
               <p className="fine-print">
-                Choose stock price or company valuation (market cap). Each
-                company’s target applies to its shares and every option on the
-                same underlying. Blank means incomplete, not $0.
+                Choose stock price, company valuation (market cap), or monthly
+                return. Each path applies to its shares and every option on the
+                same underlying. Blank inputs remain incomplete.
               </p>
               {activePaths.length ? (
-                activePaths.map((path) => {
+                activePaths.map((path, pathIndex) => {
                   const inputs = monthlyTargetInputs(path);
                   const valuation = inputs.mode === "valuation";
+                  const returns = inputs.mode === "return";
+                  const field = valuation
+                    ? "marketCapInputs"
+                    : returns
+                      ? "returnInputs"
+                      : "priceInputs";
                   const resolved = resolveMonthlyTarget(path, month);
+                  const periodId = `${inputIds}-${pathIndex}-period`;
+                  const resultId = `${inputIds}-${pathIndex}-price`;
                   return (
                     <div className={styles.priceRow} key={path.symbol}>
                       <span>
@@ -555,9 +633,9 @@ export function MonthlyScenario({
                         </small>
                         {anchors.get(path.symbol)?.conflict && (
                           <small className={styles.warning}>
-                            Captured prices differ. Enter this month’s shared
-                            price and review the starting anchor in Model
-                            assumptions.
+                            {returns
+                              ? "Captured prices differ. Enter a shared starting price below."
+                              : "Captured prices differ. Enter this month’s shared price and review the starting anchor in Model assumptions."}
                           </small>
                         )}
                         {anchors.get(path.symbol)?.unsupported && (
@@ -590,59 +668,92 @@ export function MonthlyScenario({
                             >
                               Company valuation (market cap)
                             </option>
+                            <option value="return">Monthly return (%)</option>
                           </select>
                         </label>
                         {!supportsMonthlyValuation(path.symbol) && (
-                          <small>Use share price for this fund.</small>
+                          <small>
+                            Use share price or monthly returns for this fund.
+                          </small>
+                        )}
+                        {returns && (
+                          <label>
+                            <span className={styles.inputLabel}>
+                              Starting price at snapshot ($)
+                            </span>
+                            <input
+                              aria-label={`${path.symbol} starting price`}
+                              className="financial-number private-value"
+                              type="number"
+                              min={0}
+                              max={monthlyTargetLimits.price}
+                              step="any"
+                              value={path.initialPrice ?? ""}
+                              placeholder="Enter a shared starting price"
+                              onChange={(event) =>
+                                changeStartingPrice(
+                                  path.symbol,
+                                  event.target.value,
+                                )
+                              }
+                            />
+                          </label>
                         )}
                         <label>
                           <span className={styles.inputLabel}>
                             {valuation
-                              ? "Company valuation / market cap"
-                              : `${path.symbol} stock price`}{" "}
-                            ($)
+                              ? "Company valuation / market cap ($)"
+                              : returns
+                                ? "Monthly return (%)"
+                                : `${path.symbol} stock price ($)`}
                           </span>
                           <input
-                            aria-label={`${path.symbol} ${valuation ? "company valuation" : "price"} in ${monthLabel(plan.dates[month])}`}
+                            aria-label={`${path.symbol} ${valuation ? "company valuation" : returns ? "monthly return" : "price"} in ${monthLabel(plan.dates[month])}`}
+                            aria-describedby={
+                              returns ? `${periodId} ${resultId}` : undefined
+                            }
+                            aria-invalid={
+                              returns && resolved.invalid ? true : undefined
+                            }
                             className="financial-number private-value"
                             type="text"
-                            inputMode="decimal"
+                            inputMode={returns ? "text" : "decimal"}
                             maxLength={64}
-                            value={
-                              (valuation
-                                ? inputs.marketCapInputs
-                                : inputs.priceInputs)[month]
-                            }
+                            value={inputs[field][month]}
                             placeholder={
                               valuation
                                 ? "Enter full USD valuation"
-                                : "Enter a price"
+                                : returns
+                                  ? "e.g. +10 or -5"
+                                  : "Enter a price"
                             }
                             onChange={(event) =>
-                              changeTarget(
-                                path.symbol,
-                                valuation
-                                  ? {
-                                      marketCapInputs:
-                                        inputs.marketCapInputs.map(
-                                          (value, index) =>
-                                            index === month
-                                              ? event.target.value
-                                              : value,
-                                        ),
-                                    }
-                                  : {
-                                      priceInputs: inputs.priceInputs.map(
-                                        (value, index) =>
-                                          index === month
-                                            ? event.target.value
-                                            : value,
-                                      ),
-                                    },
-                              )
+                              changeTarget(path.symbol, {
+                                [field]: inputs[field].map((value, index) =>
+                                  index === month ? event.target.value : value,
+                                ),
+                              })
                             }
                           />
                         </label>
+                        {returns && (
+                          <small id={periodId}>
+                            {month === 0
+                              ? "First period: snapshot"
+                              : "Previous checkpoint"}{" "}
+                            {dateLabel(
+                              month === 0
+                                ? working.capturedAt
+                                : plan.dates[month - 1],
+                            )}
+                            {" → "}
+                            {dateLabel(plan.dates[month])}. Each return
+                            compounds once from the prior price over this entire
+                            period, with no annualization or proration. Enter 0
+                            for no change; -100 brings the price to zero, where
+                            later valid returns keep it.
+                          </small>
+                        )}
                         {valuation && (
                           <>
                             <label>
@@ -669,24 +780,6 @@ export function MonthlyScenario({
                               constant across this path. This is your
                               assumption, not a live fundamental.
                             </small>
-                            <small
-                              className={
-                                resolved.price == null ? styles.warning : ""
-                              }
-                              role="status"
-                            >
-                              {resolved.price == null ? (
-                                resolved.reason
-                              ) : (
-                                <>
-                                  Implied stock price:{" "}
-                                  <span className="financial-number private-value">
-                                    {money(resolved.price)}
-                                  </span>{" "}
-                                  · market cap ÷ shares outstanding
-                                </>
-                              )}
-                            </small>
                             <small>
                               Enter USD, up to{" "}
                               {money(monthlyTargetLimits.marketCap, 0)}. For
@@ -694,19 +787,44 @@ export function MonthlyScenario({
                             </small>
                           </>
                         )}
+                        {(valuation || returns) && (
+                          <small
+                            id={resultId}
+                            className={
+                              resolved.price == null ? styles.warning : ""
+                            }
+                            role="status"
+                          >
+                            {resolved.price == null ? (
+                              resolved.reason
+                            ) : (
+                              <>
+                                Implied stock price:{" "}
+                                <span className="financial-number private-value">
+                                  {money(resolved.price)}
+                                </span>
+                                {valuation
+                                  ? " · market cap ÷ shares outstanding"
+                                  : " · compounded underlying price"}
+                              </>
+                            )}
+                          </small>
+                        )}
                       </div>
                     </div>
                   );
                 })
               ) : (
                 <p className="muted">
-                  This snapshot contains cash only. Cash stays constant across
-                  months.
+                  This snapshot contains cash only. Gross cash stays constant
+                  across months; any frozen debt accrues modeled interest.
                 </p>
               )}
             </section>
             <section className={`panel ${styles.editor}`}>
-              <h3>What makes up the total</h3>
+              <h3>
+                What makes up the {principal > 0 ? "net equity" : "total"}
+              </h3>
               <dl
                 className={styles.composition}
                 data-wide-values={[
@@ -753,6 +871,84 @@ export function MonthlyScenario({
                   </dd>
                 </div>
               </dl>
+              {principal > 0 && (
+                <>
+                  <dl
+                    className={styles.composition}
+                    aria-label="Scenario financing"
+                  >
+                    {[
+                      ["Gross assets", row?.grossTotal],
+                      ["Entered principal", row?.principal],
+                      ["New modeled interest", row?.interest],
+                      ["Outstanding debt", row?.outstandingDebt],
+                      ["Net equity", row?.netEquity],
+                      [
+                        "Maintenance required",
+                        row?.marginSummary?.maintenanceRequired,
+                      ],
+                      [
+                        "Combined maintenance excess",
+                        row?.marginSummary?.maintenanceExcess,
+                      ],
+                      [
+                        "Maintenance shortfall",
+                        row?.marginSummary?.maintenanceShortfall,
+                      ],
+                    ].map(([label, value]) => (
+                      <div key={String(label)}>
+                        <dt>{String(label)}</dt>
+                        <dd
+                          className="financial-number private-value"
+                          style={amountStyle(
+                            money(value as number | null | undefined),
+                          )}
+                        >
+                          {money(value as number | null | undefined)}
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
+                  <p className="fine-print">
+                    Daily compounding counts whole Eastern calendar days from
+                    capture, including weekends. Captured loan APR and 360/365
+                    basis are separate from the option model rate. Principal is
+                    a liability; only new interest reduces modeled profit.
+                    Captured rates stay fixed; there is no cash netting or
+                    automatic debt paydown.
+                  </p>
+                  <details>
+                    <summary>
+                      Frozen portfolio financing and maintenance
+                    </summary>
+                    {working.portfolioSnapshots?.map((p) => {
+                      const projected = row?.portfolioMargins?.find(
+                        (result) => result.id === p.id,
+                      );
+                      return (
+                        <div key={p.id}>
+                          <h4>{p.name}</h4>
+                          <p className="fine-print">
+                            APR {p.margin.aprPercent}% ·{" "}
+                            {p.margin.dayCountBasis}-day basis ·{" "}
+                            {p.margin.maintenancePercent}% maintenance ·
+                            equities assumed eligible; long options excluded
+                          </p>
+                          <p className="financial-number private-value">
+                            Principal {money(p.margin.debt)} · New interest{" "}
+                            {money(projected?.interest)} · Excess{" "}
+                            {money(projected?.marginSummary?.maintenanceExcess)}{" "}
+                            · Shortfall{" "}
+                            {money(
+                              projected?.marginSummary?.maintenanceShortfall,
+                            )}
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </details>
+                </>
+              )}
               <p className={styles.policy}>
                 At expiry, assume liquidation at intrinsic value and carry the
                 proceeds unchanged. The expiry price is interpolated between
@@ -761,6 +957,15 @@ export function MonthlyScenario({
               </p>
             </section>
           </div>
+          <TaxTracker
+            assets={working.assets}
+            settings={working.tax}
+            sales={monthlyTaxSales(working, row)}
+            onChange={(tax) => change({ tax })}
+            scenarioId={working.id}
+            capturedAt={working.capturedAt}
+            context={`Full liquidation at the selected ${dateLabel(plan.dates[month])} checkpoint. Expired options retain their original liquidation date.`}
+          />
           {calculation.error && (
             <p className="error-box" role="alert">
               Check the scenario inputs: {calculation.error}
@@ -796,7 +1001,7 @@ export function MonthlyScenario({
             <h3>Captured baseline and price path</h3>
             <div className={styles.baseline}>
               <span>
-                Captured portfolio{" "}
+                Captured {principal > 0 ? "net equity" : "portfolio"}{" "}
                 <strong className="financial-number private-value">
                   {money(snapshotValue)}
                 </strong>
@@ -816,8 +1021,9 @@ export function MonthlyScenario({
             </div>
             <p className="fine-print">
               Future rows are model estimates, not today’s option quotes. Profit
-              compares holdings with their original cost; change compares the
-              portfolio with this captured value. Neither is income or a
+              compares holdings with their original cost and deducts new
+              financing interest; change compares net equity with this captured
+              value. Entered principal is not an expense. Neither is income or a
               guaranteed return.
             </p>
             {quoteWarnings.length > 0 && (
@@ -842,7 +1048,7 @@ export function MonthlyScenario({
             </summary>
             <div className={styles.assumptionFields}>
               <label>
-                Interest rate (%)
+                Option model risk-free rate (%)
                 <input
                   className="financial-number private-value"
                   type="number"
@@ -884,63 +1090,58 @@ export function MonthlyScenario({
               differently, and issuers may pay dividends. Captured or estimated
               IV remains fixed unless overridden.
             </p>
-            <h4>Price at capture · interpolation anchor</h4>
+            <h4>Price at capture · shared starting anchor</h4>
             <p className="fine-print">
-              Used only when expiry falls before the first monthly checkpoint.
+              Used for expiry interpolation before the first monthly checkpoint
+              and as the starting price for monthly returns. Return-mode
+              starting prices are editable beside their return inputs above.
               Changing this assumption does not replace the captured portfolio
               value.
             </p>
             <div className={styles.assumptionFields}>
-              {activePaths.map((path) => (
-                <label key={path.symbol}>
-                  {path.symbol} at capture ($)
-                  <input
-                    className="financial-number private-value"
-                    type="number"
-                    min={0}
-                    max={1e9}
-                    step="any"
-                    value={path.initialPrice ?? ""}
-                    onChange={(event) =>
-                      changePlan({
-                        paths: plan.paths.map((item) =>
-                          item.symbol === path.symbol
-                            ? {
-                                ...item,
-                                initialPrice: inputNumber(event.target.value),
-                              }
-                            : item,
-                        ),
-                      })
-                    }
-                  />
-                  {anchors.get(path.symbol)?.conflict && (
-                    <small className={styles.warning}>
-                      Captured prices differ for {path.symbol}:{" "}
-                      <span className="private-value">
-                        {anchors
-                          .get(path.symbol)!
-                          .prices.map((price) => `$${num(price)}`)
-                          .join(", ")}
-                      </span>
-                      .
-                      {path.initialPrice == null ? (
-                        " Enter a shared starting price or an explicit expiry price if an option expires before the first checkpoint."
-                      ) : (
-                        <>
-                          {" "}
-                          This plan uses{" "}
-                          <span className="private-value">
-                            ${num(path.initialPrice)}
-                          </span>{" "}
-                          as its shared starting assumption. Saved monthly
-                          inputs are retained.
-                        </>
-                      )}
-                    </small>
-                  )}
-                </label>
-              ))}
+              {activePaths
+                .filter((path) => monthlyTargetInputs(path).mode !== "return")
+                .map((path) => (
+                  <label key={path.symbol}>
+                    {path.symbol} at capture ($)
+                    <input
+                      className="financial-number private-value"
+                      type="number"
+                      min={0}
+                      max={1e9}
+                      step="any"
+                      value={path.initialPrice ?? ""}
+                      onChange={(event) =>
+                        changeStartingPrice(path.symbol, event.target.value)
+                      }
+                    />
+                    {anchors.get(path.symbol)?.conflict && (
+                      <small className={styles.warning}>
+                        Captured prices differ for {path.symbol}:{" "}
+                        <span className="private-value">
+                          {anchors
+                            .get(path.symbol)!
+                            .prices.map((price) => `$${num(price)}`)
+                            .join(", ")}
+                        </span>
+                        .
+                        {path.initialPrice == null ? (
+                          " Enter a shared starting price or an explicit expiry price if an option expires before the first checkpoint."
+                        ) : (
+                          <>
+                            {" "}
+                            This plan uses{" "}
+                            <span className="private-value">
+                              ${num(path.initialPrice)}
+                            </span>{" "}
+                            as its shared starting assumption. Saved monthly
+                            inputs are retained.
+                          </>
+                        )}
+                      </small>
+                    )}
+                  </label>
+                ))}
             </div>
           </details>
           {expiries.length > 0 && (

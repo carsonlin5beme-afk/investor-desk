@@ -6,7 +6,7 @@ export default function Page() {
       title="Keep your ideas close."
     >
       <p>
-        This local installation stores the information you enter to provide your
+        This site stores the information you enter to provide your
         simulated workspace. It does not connect to a brokerage account or place
         real trades.
       </p>
@@ -22,15 +22,17 @@ export default function Page() {
       <p>
         Your profile, simulated portfolios, transaction history, targets,
         scenario snapshots, research notes, and appearance preferences live in
-        this installation’s local database. The account session controls access.
-        A local profile is not an encrypted vault against someone with access to
-        the database or this computer.
+        this site's database. The account session controls access. A hosted
+        profile is stored with the site's hosting and database providers, and
+        is separate from a profile created on a local installation. A profile
+        is not an encrypted vault against someone with access to the server or
+        database.
       </p>
       <h2>Provider requests</h2>
       <p>
         Sample mode uses illustrative data. Configured market-data integrations
         send symbol and contract requests to their providers. API credentials
-        remain in the local server configuration. Each provider’s terms and
+        remain in the server configuration. Each provider’s terms and
         privacy practices apply to its service. This interface does not purchase
         market data or transmit simulated orders to a broker.
       </p>
@@ -51,11 +53,11 @@ export default function Page() {
       </p>
       <h2>Access and recovery</h2>
       <p>
-        This installation uses local email-and-password profiles. Email
-        verification, recovery email delivery, passkeys, and remote
-        synchronization are not configured. Protect your local account
-        credentials and keep a backup of the installation’s database if you need
-        durable recovery.
+        This site uses email-and-password profiles. Email verification,
+        recovery email delivery, and passkeys are not configured. Protect your
+        account credentials; a forgotten password cannot currently be reset by
+        email. Saved profiles can be accessed by signing in to the same site.
+        They do not synchronize with separate installations.
       </p>
       <h2>Fonts and browsing</h2>
       <p>

@@ -155,7 +155,7 @@ export function ProfileForm({ create = false }: { create?: boolean }) {
             {capsLock ? "Caps Lock is on. " : ""}
             {create
               ? `${password.length} / 12 minimum characters`
-              : "Use your local profile password."}
+              : "Use your Investor Desk profile password."}
           </small>
           {create && (
             <small>
@@ -219,8 +219,9 @@ export function ProfileForm({ create = false }: { create?: boolean }) {
       <p className="fine-print">
         Temporary guest work lasts through page refreshes, but is not durable
         storage. Save before ending your browser session, restarting the server,
-        or 24 hours of inactivity. Local profiles only; email verification and
-        password recovery are not configured. No brokerage connection.
+        or 24 hours of inactivity. Profiles save to this site's database;
+        profiles created on another installation are separate. Email verification
+        and password recovery are not configured. No brokerage connection.
       </p>
     </form>
   );

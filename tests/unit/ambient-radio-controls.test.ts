@@ -54,6 +54,7 @@ const state = async (value: AmbientState) => act(() => audio.emit(value));
 beforeEach(async () => {
   vi.clearAllMocks();
   localStorage.clear();
+  sessionStorage.clear();
   visibility = "visible";
   vi.spyOn(document, "visibilityState", "get").mockImplementation(
     () => visibility,

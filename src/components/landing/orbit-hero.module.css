@@ -1,7 +1,9 @@
 .hero {
   position: relative;
   isolation: isolate;
-  min-height: calc(100svh - var(--landing-header-height, 106px));
+  height: 100%;
+  min-height: 0;
+  width: 100%;
   max-width: 2000px;
   margin: auto;
   display: flex;
@@ -14,8 +16,8 @@
   inset: 0;
   overflow: hidden;
   z-index: -1;
+  background: #050909;
 }
-.fallback,
 .canvasHost,
 .canvasHost canvas {
   display: block;
@@ -23,8 +25,14 @@
   height: 100%;
 }
 .fallback {
-  object-fit: cover;
-  object-position: 50% 45%;
+  display: block;
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 100%;
+  height: auto;
+  max-width: none;
+  transform: translateY(-50%);
   opacity: 1;
 }
 .canvasHost {
@@ -210,13 +218,19 @@
   }
   .copy {
     width: 100%;
-    padding: 35px 6vw 0;
+    flex: none;
+    padding: clamp(8px, 3dvh, 35px) 6vw 0;
+  }
+  .hero .titleBrand {
+    width: min(100%, 58dvh);
   }
   .scene {
     position: relative;
     inset: auto;
     width: 100%;
-    height: clamp(290px, 85vw, 480px);
+    height: auto;
+    min-height: 0;
+    flex: 1;
     margin-top: 8px;
     z-index: 0;
   }
@@ -228,9 +242,6 @@
       transparent 85%,
       #05080e
     );
-  }
-  .fallback {
-    object-position: 77% 50%;
   }
   .hero .title {
     margin-bottom: 22px;
@@ -254,6 +265,34 @@
   }
   .assurance {
     margin-top: 20px;
+  }
+}
+@media (max-width: 760px) and (max-height: 520px) {
+  .hero {
+    flex-direction: row;
+    align-items: center;
+  }
+  .copy {
+    width: 52%;
+    padding: 12px 0 20px 5vw;
+  }
+  .hero .titleBrand {
+    width: 100%;
+  }
+  .scene {
+    position: absolute;
+    inset: 0 0 0 auto;
+    width: 50%;
+    height: 100%;
+    margin: 0;
+  }
+  .actions {
+    margin-top: 12px;
+  }
+  .primary {
+    min-width: 0;
+    min-height: 44px;
+    padding: 12px 20px;
   }
 }
 @media (min-width: 761px) and (max-height: 600px) {

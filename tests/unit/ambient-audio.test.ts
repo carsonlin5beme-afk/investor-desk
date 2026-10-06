@@ -152,6 +152,50 @@ describe("optional ambient radio lifecycle", () => {
     f.engine.dispose();
   });
 
+  it("a gesture retries pending autoplay with the same context and graph", async () => {
+    const f = fixture();
+    let finish!: () => void;
+    f.context.resume.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const autoplay = f.engine.play();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(f.states.at(-1)).toBe("starting");
+    await f.engine.play();
+    expect(f.states.at(-1)).toBe("playing");
+    expect(f.context.resume).toHaveBeenCalledTimes(2);
+    expect(f.dependencies.context).toHaveBeenCalledOnce();
+    expect(f.dependencies.graph).toHaveBeenCalledOnce();
+    finish();
+    await autoplay;
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(f.states.at(-1)).toBe("playing");
+    expect(f.context.suspend).not.toHaveBeenCalled();
+    expect(f.graph.fadeVolume).toHaveBeenCalledOnce();
+    f.engine.dispose();
+  });
+
+  it("a policy rejection remains suspended and a gesture reuses its resources", async () => {
+    const f = fixture();
+    f.context.resume.mockRejectedValueOnce(
+      new DOMException("User activation required", "NotAllowedError"),
+    );
+    await f.engine.play();
+    expect(f.states.at(-1)).toBe("suspended");
+    expect(f.context.close).not.toHaveBeenCalled();
+    expect(
+      f.graph.fadeVolume.mock.calls.every(([volume]) => volume === 0),
+    ).toBe(true);
+    await f.engine.play();
+    expect(f.states.at(-1)).toBe("playing");
+    expect(f.dependencies.context).toHaveBeenCalledOnce();
+    expect(f.dependencies.graph).toHaveBeenCalledOnce();
+    f.engine.dispose();
+  });
+
   it("disposing during startup is idempotent and stale callbacks cannot publish playing", async () => {
     const f = fixture();
     let finish!: () => void;

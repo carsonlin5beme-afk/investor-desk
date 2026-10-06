@@ -292,7 +292,12 @@ export class AmbientAudio {
   }
 
   async play() {
-    if (this.disposed || this.desired) return;
+    if (
+      this.disposed ||
+      (this.desired &&
+        (this.state !== "starting" || this.context?.state === "running"))
+    )
+      return;
     const operation = ++this.operation;
     this.desired = true;
     this.clearTimers();
@@ -304,7 +309,7 @@ export class AmbientAudio {
         this.context.addEventListener("statechange", this.stateChanged);
       }
       const context = this.context;
-      // This call is synchronous within the user's click/keypress, before any await.
+      // Call before awaiting setup, including a gesture retry of blocked autoplay.
       const resumed = context.resume();
       this.startTimer = setTimeout(() => {
         if (operation !== this.operation || !this.desired) return;
@@ -328,10 +333,15 @@ export class AmbientAudio {
       }
       this.graph!.fadeVolume(this.volume, 1.6);
       this.update("playing");
-    } catch {
+    } catch (error) {
       if (this.disposed || operation !== this.operation) return;
       this.desired = false;
       this.clearTimers();
+      if (error instanceof DOMException && error.name === "NotAllowedError") {
+        this.graph?.fadeVolume(0, 0);
+        this.update("suspended");
+        return;
+      }
       this.release();
       this.update("error");
     }

@@ -122,6 +122,11 @@ model Portfolio {
   baseCurrency      String            @default("USD")
   startingCash      Decimal           @db.Decimal(18, 2)
   cashBalance       Decimal           @db.Decimal(18, 2)
+  // Entered existing liability only; these fields never fund available cash.
+  marginDebt               Decimal @default(0) @db.Decimal(18, 2)
+  marginAprPercent         Float   @default(0)
+  marginMaintenancePercent Float   @default(25)
+  marginDayCountBasis      Int     @default(360)
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
   positions         Position[]

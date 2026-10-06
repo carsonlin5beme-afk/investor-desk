@@ -1,0 +1,77 @@
+.editor {
+  min-width: 0;
+}
+.fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+.fields label {
+  min-width: 0;
+}
+.fields input,
+.fields select {
+  width: 100%;
+  min-width: 0;
+}
+.values {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  margin: 0;
+}
+.values div {
+  min-width: 0;
+}
+.values dt {
+  color: var(--muted);
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+.values dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-family: var(--font-numeric, sans-serif);
+  font-variant-numeric: tabular-nums lining-nums;
+  font-size: clamp(15px, 2.3vw, 23px);
+  line-height: 1.4;
+  text-shadow: none;
+}
+.panel {
+  padding: 18px 22px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  margin: 18px 0;
+  min-width: 0;
+}
+.heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+.heading h3 {
+  font-size: 15px;
+  margin: 0;
+}
+.panel .values {
+  border: 0;
+  padding: 18px 0 0;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+@media (max-width: 600px) {
+  .fields {
+    grid-template-columns: 1fr;
+  }
+  .panel .values {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .values {
+    gap: 14px;
+    padding: 14px;
+  }
+}

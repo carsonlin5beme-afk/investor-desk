@@ -1,3 +1,7 @@
+import {
+  portfolioMarginSettings,
+  portfolioValues,
+} from "@/server/services/portfolio-margin";
 import { guestResponse } from "@/server/guest/http";
 import { portfolioAccess } from "@/server/auth/access";
 import { NextResponse } from "next/server";
@@ -44,12 +48,23 @@ export async function GET(request: Request, { params }: Params) {
     const totals = aggregatePortfolioProjection(
       cashBalance,
       positionProjections,
+      portfolioMarginSettings(portfolio).debt,
     );
 
     return NextResponse.json({
       portfolioId: portfolio.id,
       cashBalance,
-      projectedNetWorth: totals.projectedNetWorth,
+      ...totals,
+      ...portfolioValues(
+        cashBalance,
+        positionProjections
+          .filter((p) => p.assetClass === "EQUITY")
+          .reduce((sum, p) => sum + p.currentMarketValue, 0),
+        positionProjections
+          .filter((p) => p.assetClass === "OPTION")
+          .reduce((sum, p) => sum + p.currentMarketValue, 0),
+        portfolioMarginSettings(portfolio),
+      ),
       projectedPositionsTotal: totals.projectedPositionsTotal,
       positions: positionProjections,
     });

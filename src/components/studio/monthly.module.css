@@ -511,3 +511,10 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+.horizonActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 18px;
+}

@@ -1,4 +1,11 @@
+import {
+  resolveMarginSettings,
+  marginSettingsSchema,
+  elapsedMarginDays,
+  projectMarginDebt,
+} from "./margin";
 import { z } from "zod";
+import { scenarioTaxSettingsSchema } from "./scenario-tax";
 import type { Holding, Portfolio } from "./desk-types";
 import { blackScholesPrice } from "@/server/domain/black-scholes";
 import { resolveOptionExpiry, optionExpiryPolicy } from "./option-expiration";
@@ -42,7 +49,7 @@ export type ScenarioAsset = z.infer<typeof scenarioAssetSchema>;
 export const assumptionsSchema = z.object({
   rate: finite.min(-0.1).max(0.5),
   iv: finite.min(0.01).max(5).nullable(),
-  daysForward: finite.min(0).max(3650),
+  daysForward: finite.min(0).max(3650).nullable(),
 });
 export type Assumptions = z.infer<typeof assumptionsSchema>;
 export const defaultAssumptions: Assumptions = {
@@ -50,6 +57,24 @@ export const defaultAssumptions: Assumptions = {
   iv: null,
   daysForward: 0,
 };
+export const frozenPortfoliosSchema = z
+  .array(
+    z
+      .object({
+        id: z.string().min(1).max(150),
+        name: z.string().max(80),
+        cash: finite
+          .nonnegative()
+          .max(1e20)
+          .refine(
+            (v) => Math.round(v * 100) / 100 === v,
+            "Frozen portfolio cash must use whole cents.",
+          ),
+        margin: marginSettingsSchema,
+      })
+      .strict(),
+  )
+  .max(100);
 export const scenarioSchema = z.object({
   id: z.string().uuid(),
   name: z.string().trim().min(1).max(80),
@@ -58,11 +83,105 @@ export const scenarioSchema = z.object({
   expirationPolicy: z.string().max(100).optional(),
   portfolioNames: z.array(z.string().max(80)).max(100),
   cash: finite.nonnegative().max(1e20),
+  // Omitted in legacy snapshots: those scenarios have zero modeled debt.
+  portfolioSnapshots: frozenPortfoliosSchema.optional(),
   assets: z.array(scenarioAssetSchema).max(2000),
   assumptions: assumptionsSchema,
   monthly: monthlyPlanSchema.optional(),
+  tax: scenarioTaxSettingsSchema.optional(),
 });
 export type SavedScenario = z.infer<typeof scenarioSchema>;
+
+/** Frozen accounts must agree with the gross cash and holding scope. */
+export function validateScenarioPortfolios(
+  scenario: Pick<SavedScenario, "portfolioSnapshots" | "cash" | "assets">,
+) {
+  if (!scenario.portfolioSnapshots) return;
+  const accounts = frozenPortfoliosSchema.parse(scenario.portfolioSnapshots);
+  const ids = new Set(accounts.map((p) => p.id));
+  if (ids.size !== accounts.length)
+    throw new Error("Snapshot portfolio IDs must be unique.");
+  if (scenario.assets.some((a) => !ids.has(a.portfolioId)))
+    throw new Error("A holding is outside the frozen portfolio scope.");
+  const cash = accounts.reduce((sum, p) => sum + p.cash, 0);
+  if (!Number.isFinite(cash) || Math.abs(cash - scenario.cash) > 0.000001)
+    throw new Error("Frozen portfolio cash does not match the snapshot total.");
+  accounts.forEach((p) => marginSettingsSchema.parse(p.margin));
+}
+
+/** Tax assumptions cover exactly the positive captured holdings; unknown inputs stay unknown. */
+export function validateScenarioTax(
+  scenario: Pick<SavedScenario, "assets" | "tax">,
+) {
+  if (!scenario.tax) return;
+  const settings = scenarioTaxSettingsSchema.parse(scenario.tax);
+  const active = scenario.assets.filter((asset) => asset.quantity > 0);
+  const ids = new Set(active.map((asset) => asset.id));
+  if (ids.size !== active.length)
+    throw new Error("Tax holding IDs must be unique.");
+  if (
+    settings.assumptions.length !== ids.size ||
+    settings.assumptions.some((a) => !ids.has(a.assetId))
+  )
+    throw new Error("Tax assumptions must match the captured holdings.");
+}
+
+/** New financing expense is computed independently of option model rates. */
+export function scenarioFinancing(
+  scenario: Pick<
+    SavedScenario,
+    "portfolioSnapshots" | "capturedAt" | "assumptions"
+  >,
+) {
+  if (scenario.assumptions.daysForward == null) return null;
+  const at = Date.parse(scenario.capturedAt);
+  const days = elapsedMarginDays(
+    at,
+    at + scenario.assumptions.daysForward * 86400000,
+  );
+  if (days == null) return null;
+  let principal = 0,
+    interest = 0;
+  for (const p of scenario.portfolioSnapshots ?? []) {
+    const projection = projectMarginDebt(p.margin, days);
+    if (!projection) return null;
+    const cents = Math.round(projection.interest * 100);
+    if (!Number.isSafeInteger(cents)) return null;
+    principal += projection.principal;
+    interest += cents / 100;
+  }
+  const outstandingDebt = currency(principal + interest);
+  return [principal, interest, outstandingDebt].every((v) =>
+    Number.isSafeInteger(Math.round(v * 100)),
+  )
+    ? {
+        principal: currency(principal),
+        interest: currency(interest),
+        outstandingDebt,
+        elapsedDays: days,
+      }
+    : null;
+}
+
+/** Nonfinite results are unavailable; charts and currency labels guard them. */
+export function scenarioTotalAt(
+  scenario: SavedScenario,
+  progress: number,
+  mode: "model" | "intrinsic" = "model",
+) {
+  const financing = scenarioFinancing(scenario);
+  if (!financing) return NaN;
+  return currency(
+    totalAt(
+      scenario.assets,
+      scenario.cash,
+      progress,
+      mode,
+      scenario.assumptions,
+      Date.parse(scenario.capturedAt),
+    ) - financing.outstandingDebt,
+  );
+}
 export const journalSchema = z.object({
   id: z.string().uuid(),
   holdingId: z.string().max(150),
@@ -129,6 +248,8 @@ export function validateWorkspaceValue(
   if (key === "preferences") return preferencesSchema.parse(value);
   if (key.startsWith("scenario:")) {
     const v = scenarioSchema.parse(value);
+    validateScenarioPortfolios(v);
+    validateScenarioTax(v);
     validateMonthlySnapshot(v);
     if (key !== `scenario:${v.id}`)
       throw new Error("Scenario ID does not match.");
@@ -186,6 +307,7 @@ export function valueAt(
   if (asset.target == null) return asset.currentValue;
   const t = Math.min(1, Math.max(0, progress));
   if (t === 0) return asset.currentValue;
+  if (assumptions.daysForward == null) return NaN;
   if (!asset.option)
     return currency(
       asset.currentValue +
@@ -257,6 +379,12 @@ export function snapshot(portfolios: Portfolio[], name: string): SavedScenario {
     capturedAt: new Date().toISOString(),
     expirationPolicy: optionExpiryPolicy,
     portfolioNames: portfolios.map((p) => p.name),
+    portfolioSnapshots: portfolios.map((p) => ({
+      id: p.id,
+      name: p.name,
+      cash: p.cashBalance,
+      margin: resolveMarginSettings(p.margin),
+    })),
     cash: portfolios.reduce((s, p) => s + p.cashBalance, 0),
     assets: portfolios.flatMap((p) => p.positions.map(assetFromHolding)),
     assumptions: { ...defaultAssumptions },

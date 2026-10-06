@@ -129,6 +129,7 @@ beforeEach(() => {
   audio.launch.mockImplementation(() => audio.stopLaunch);
   audio.impact.mockImplementation(() => audio.stopImpact);
   localStorage.clear();
+  sessionStorage.clear();
   visibility = "visible";
   vi.spyOn(document, "visibilityState", "get").mockImplementation(
     () => visibility,

@@ -1,4 +1,12 @@
 "use client";
+import { MarginModal } from "./studio/MarginModal";
+import {
+  resolveMarginSettings,
+  summarizeMargin,
+  aggregateMargin,
+  type MarginSettings,
+} from "@/lib/margin";
+import marginStyles from "./studio/margin.module.css";
 import {
   AmbientRadioControls,
   DialogRadioControl,
@@ -91,8 +99,15 @@ export function InvestorDesk({ portfolioId }: { portfolioId?: string }) {
     [quality, setQuality] = useState("ALL"),
     [method, setMethod] = useState<"model" | "intrinsic">("model");
   const [modal, setModal] = useState<
-      "create" | "cash" | "settings" | "manager" | "portfolio-picker" | null
+      | "create"
+      | "cash"
+      | "settings"
+      | "manager"
+      | "portfolio-picker"
+      | "margin-picker"
+      | null
     >(null),
+    [marginId, setMarginId] = useState<string | null>(null),
     [target, setTarget] = useState<Holding | null>(null),
     [ticket, setTicket] = useState<{
       portfolio: Portfolio;
@@ -317,10 +332,24 @@ export function InvestorDesk({ portfolioId }: { portfolioId?: string }) {
   const cash = selected.reduce((s, p) => s + p.cashBalance, 0),
     current = selected.reduce((s, p) => s + p.currentValue, 0),
     assets = useMemo(() => holdings.map(assetFromHolding), [holdings]),
-    projected = totalAt(assets, cash, 1, method),
+    debt = selected.reduce(
+      (sum, p) => sum + resolveMarginSettings(p.margin).debt,
+      0,
+    ),
+    projected = totalAt(assets, cash, 1, method) - debt,
     equities = selected.reduce((s, p) => s + p.equitiesValue, 0),
     options = selected.reduce((s, p) => s + p.optionsValue, 0),
     targetCount = holdings.filter((h) => h.projection.hasTarget).length;
+  const marginSummary = aggregateMargin(
+    selected.map((p) =>
+      summarizeMargin(
+        p.cashBalance,
+        p.equitiesValue,
+        p.optionsValue,
+        resolveMarginSettings(p.margin),
+      ),
+    ),
+  );
   const filtered = holdings.filter(
     (h) =>
       (filter === "ALL" ||
@@ -357,6 +386,43 @@ export function InvestorDesk({ portfolioId }: { portfolioId?: string }) {
     if (active) setTicket({ portfolio: active });
     else if (all.length === 1) setTicket({ portfolio: all[0] });
     else setModal(all.length ? "portfolio-picker" : "create");
+  };
+  const manageMargin = () => {
+    if (active) setMarginId(active.id);
+    else if (selected.length === 1) setMarginId(selected[0].id);
+    else setModal("margin-picker");
+  };
+  const marginSaved = (id: string, settings: MarginSettings) => {
+    setData((old) =>
+      old
+        ? {
+            ...old,
+            portfolios: old.portfolios.map((p) => {
+              if (p.id !== id) return p;
+              const previousDebt = resolveMarginSettings(p.margin).debt;
+              const summary = summarizeMargin(
+                p.cashBalance,
+                p.equitiesValue,
+                p.optionsValue,
+                settings,
+              )!;
+              return {
+                ...p,
+                margin: settings,
+                marginSummary: summary,
+                grossCurrentValue: summary.grossValue,
+                netEquity: summary.netEquity,
+                currentValue: summary.netEquity,
+                projectedNetWorth:
+                  p.projectedNetWorth + previousDebt - settings.debt,
+                intrinsicNetWorth:
+                  p.intrinsicNetWorth + previousDebt - settings.debt,
+              };
+            }),
+          }
+        : old,
+    );
+    notify("Margin settings saved");
   };
   const sell = (h: Holding) => {
     const p = all.find((p) => p.id === h.portfolioId);
@@ -397,6 +463,12 @@ export function InvestorDesk({ portfolioId }: { portfolioId?: string }) {
       run: () => setModal("create"),
     },
     { id: "order", label: "New simulated order", run: trade },
+    ...all.map((p) => ({
+      id: `margin-${p.id}`,
+      label: `Manage margin · ${p.name}`,
+      detail: "Existing debt and financing assumptions",
+      run: () => setMarginId(p.id),
+    })),
     {
       id: "report",
       label: "Export investment brief",
@@ -884,7 +956,11 @@ export function InvestorDesk({ portfolioId }: { portfolioId?: string }) {
                 <>
                   <section className={`net-worth-hero ${styles.overviewCards}`}>
                     <div className={`hero-current ${styles.currentPanel}`}>
-                      <span className="eyebrow">CURRENT PORTFOLIO VALUE</span>
+                      <span className="eyebrow">
+                        {debt > 0
+                          ? "CURRENT NET EQUITY"
+                          : "CURRENT PORTFOLIO VALUE"}
+                      </span>
                       <div
                         className="current-value private-value"
                         style={amountFit(current)}
@@ -926,7 +1002,7 @@ export function InvestorDesk({ portfolioId }: { portfolioId?: string }) {
                               ) : (
                                 <ArrowDownRight size={15} />
                               )}{" "}
-                              {current
+                              {current > 0
                                 ? `${Math.abs((projected / current - 1) * 100).toFixed(1)}%`
                                 : "—"}
                             </span>
@@ -988,6 +1064,60 @@ export function InvestorDesk({ portfolioId }: { portfolioId?: string }) {
                         </div>
                       </button>
                     </div>
+                  </section>
+                  <section
+                    className={marginStyles.panel}
+                    aria-label="Portfolio margin"
+                  >
+                    <div className={marginStyles.heading}>
+                      <h3>
+                        {debt > 0
+                          ? "Margin and net equity"
+                          : "Portfolio financing"}
+                      </h3>
+                      <button className="text-button" onClick={manageMargin}>
+                        Manage margin
+                      </button>
+                    </div>
+                    {debt > 0 && (
+                      <>
+                        <dl className={marginStyles.values}>
+                          {[
+                            ["Gross assets", cash + equities + options],
+                            ["Existing margin debt", debt],
+                            ["Net equity", current],
+                            ["Margin equity", marginSummary?.marginEquity],
+                            [
+                              "Maintenance required",
+                              marginSummary?.maintenanceRequired,
+                            ],
+                            [
+                              "Combined maintenance excess",
+                              marginSummary?.maintenanceExcess,
+                            ],
+                            [
+                              "Maintenance shortfall",
+                              marginSummary?.maintenanceShortfall,
+                            ],
+                          ].map(([label, value]) => (
+                            <div key={String(label)}>
+                              <dt>{String(label)}</dt>
+                              <dd className="private-value">
+                                {money(value as number | undefined)}
+                              </dd>
+                            </div>
+                          ))}
+                        </dl>
+                        <p className="fine-print">
+                          Maintenance is checked per portfolio: equities are
+                          assumed eligible; standalone long options are excluded
+                          from collateral. Shortfalls are summed without
+                          offsetting another portfolio’s surplus. Target
+                          progress keeps entered debt fixed; monthly scenarios
+                          model future interest.
+                        </p>
+                      </>
+                    )}
                   </section>
                   <div className="metrics-grid">
                     {[
@@ -1103,6 +1233,7 @@ export function InvestorDesk({ portfolioId }: { portfolioId?: string }) {
                         <Trajectory
                           holdings={holdings}
                           cash={cash}
+                          debt={debt}
                           mode={method}
                           setMode={setMethod}
                           onStudio={() => changeView("studio")}
@@ -1397,6 +1528,40 @@ export function InvestorDesk({ portfolioId }: { portfolioId?: string }) {
           close={() => setModal(null)}
           saved={() => notify("Virtual cash updated")}
         />
+      )}
+      {marginId && all.find((p) => p.id === marginId) && (
+        <MarginModal
+          key={marginId}
+          portfolio={all.find((p) => p.id === marginId)!}
+          close={() => setMarginId(null)}
+          saved={(settings) => marginSaved(marginId, settings)}
+        />
+      )}
+      {modal === "margin-picker" && (
+        <DeskModal
+          title="Choose a portfolio"
+          kicker="Manage margin"
+          close={() => setModal(null)}
+        >
+          <div className="modal-body">
+            {selected.map((p) => (
+              <button
+                className="button secondary"
+                key={p.id}
+                onClick={() => {
+                  setModal(null);
+                  setMarginId(p.id);
+                }}
+              >
+                {p.name} ·{" "}
+                <span className="private-value">
+                  {money(resolveMarginSettings(p.margin).debt)}
+                </span>{" "}
+                debt
+              </button>
+            ))}
+          </div>
+        </DeskModal>
       )}
       {modal === "settings" && (
         <Settings

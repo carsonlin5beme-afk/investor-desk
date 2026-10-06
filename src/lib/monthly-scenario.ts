@@ -16,13 +16,16 @@ const price = z
   .nullable();
 const rawInput = z.string().max(64);
 const targetInputsSchema = z.object({
-  mode: z.enum(["price", "valuation"]),
+  mode: z.enum(["price", "valuation", "return"]),
   priceInputs: z.array(rawInput).min(1).max(24),
   marketCapInputs: z.array(rawInput).min(1).max(24),
+  returnInputs: z.array(rawInput).min(1).max(24).optional(),
   sharesOutstandingInput: rawInput,
   sharesSource: z.literal("manual"),
 });
-export type MonthlyTargetInputs = z.infer<typeof targetInputsSchema>;
+export type MonthlyTargetInputs = z.infer<typeof targetInputsSchema> & {
+  returnInputs: string[];
+};
 export const supportsMonthlyValuation = (symbol: string) =>
   !["SPY", "QQQ", "VOO"].includes(symbol.trim().toUpperCase());
 
@@ -96,7 +99,11 @@ const validatePlanShape = (
       (path) =>
         path.targetInputs &&
         (path.targetInputs.priceInputs.length !== plan.dates.length ||
-          path.targetInputs.marketCapInputs.length !== plan.dates.length),
+          path.targetInputs.marketCapInputs.length !== plan.dates.length ||
+          (path.targetInputs.returnInputs != null &&
+            path.targetInputs.returnInputs.length !== plan.dates.length) ||
+          (path.targetInputs.mode === "return" &&
+            path.targetInputs.returnInputs == null)),
     )
   )
     issue("Every underlying needs one target field per month.");
@@ -137,6 +144,23 @@ export const monthlyPlanSchema = monthlyShape.superRefine((plan, ctx) => {
       )
     )
       issue("Company valuations must be between $0 and $10 trillion.");
+    // Inspect every entered rate independently: an earlier blank or zero price
+    // must not conceal a later invalid rate from strict save validation.
+    if (
+      inputs.mode === "return" &&
+      inputs.returnInputs?.some((raw) => {
+        const value = monthlyInputNumber(raw);
+        return value != null && (!Number.isFinite(value) || value < -100);
+      })
+    )
+      issue("Monthly returns must be finite percentages of at least -100%.");
+    if (
+      inputs.mode === "return" &&
+      plan.dates.some((_, index) => resolveMonthlyTarget(path, index).invalid)
+    )
+      issue(
+        "Compounded returns must produce a finite price between $0 and $1 billion without underflow.",
+      );
     const shares = monthlyInputNumber(inputs.sharesOutstandingInput);
     if (
       inputs.mode === "valuation" &&
@@ -201,17 +225,21 @@ export type MonthlyPlan = z.infer<typeof monthlyPlanSchema>;
 export type MonthlyPath = MonthlyPlan["paths"][number];
 
 export function monthlyTargetInputs(path: MonthlyPath): MonthlyTargetInputs {
-  return (
-    path.targetInputs ?? {
-      mode: "price",
-      priceInputs: path.prices.map((price) =>
-        price == null ? "" : String(price),
-      ),
-      marketCapInputs: path.prices.map(() => ""),
-      sharesOutstandingInput: "",
-      sharesSource: "manual",
-    }
-  );
+  if (path.targetInputs)
+    return {
+      ...path.targetInputs,
+      returnInputs: path.targetInputs.returnInputs ?? path.prices.map(() => ""),
+    };
+  return {
+    mode: "price",
+    priceInputs: path.prices.map((price) =>
+      price == null ? "" : String(price),
+    ),
+    marketCapInputs: path.prices.map(() => ""),
+    returnInputs: path.prices.map(() => ""),
+    sharesOutstandingInput: "",
+    sharesSource: "manual",
+  };
 }
 
 /** One bounded conversion is shared by equities, options and expiry interpolation. */
@@ -238,6 +266,50 @@ export function resolveMonthlyTarget(
       reason: valid ? null : `Enter ${path.symbol}'s price for this month.`,
       invalid: value != null && !valid,
     };
+  }
+  if (inputs.mode === "return") {
+    const anchor = path.initialPrice;
+    if (
+      anchor == null ||
+      !Number.isFinite(anchor) ||
+      anchor < 0 ||
+      anchor > monthlyTargetLimits.price
+    )
+      return {
+        price: null,
+        reason: `Enter ${path.symbol}'s starting price for monthly returns.`,
+        invalid: anchor != null,
+      };
+    let value: number = anchor;
+    for (let month = 0; month <= index; month++) {
+      const rate = monthlyInputNumber(inputs.returnInputs?.[month] ?? "");
+      if (rate == null)
+        return {
+          price: null,
+          reason: `Enter ${path.symbol}'s return for month ${month + 1} to calculate this checkpoint.`,
+          invalid: false,
+        };
+      if (!Number.isFinite(rate) || rate < -100)
+        return {
+          price: null,
+          reason: `Use a finite return of at least -100% for ${path.symbol} in month ${month + 1}.`,
+          invalid: true,
+        };
+      const next = value * (1 + rate / 100);
+      if (
+        !Number.isFinite(next) ||
+        next < 0 ||
+        next > monthlyTargetLimits.price ||
+        (value > 0 && rate !== -100 && next === 0)
+      )
+        return {
+          price: null,
+          reason: `The compounded price for ${path.symbol} in month ${month + 1} exceeds the supported range.`,
+          invalid: true,
+        };
+      value = next;
+    }
+    return { price: value, reason: null, invalid: false };
   }
   if (!supportsMonthlyValuation(path.symbol))
     return {

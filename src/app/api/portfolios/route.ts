@@ -1,3 +1,7 @@
+import {
+  portfolioMarginSettings,
+  portfolioValues,
+} from "@/server/services/portfolio-margin";
 import { guestResponse } from "@/server/guest/http";
 import { currentProfile, signInRequired } from "@/server/auth/access";
 import { CashEntryType } from "@prisma/client";
@@ -56,10 +60,10 @@ export async function GET(request: Request) {
         );
         const byClass = summarizeByAssetClass(projections);
         const cashBalance = toNumber(portfolio.cashBalance);
-        const currentTotal = cashBalance + byClass.equities + byClass.options;
         const projectionTotals = aggregatePortfolioProjection(
           cashBalance,
           projections,
+          portfolioMarginSettings(portfolio).debt,
         );
 
         return {
@@ -68,10 +72,15 @@ export async function GET(request: Request) {
           baseCurrency: portfolio.baseCurrency,
           startingCash: toNumber(portfolio.startingCash),
           cashBalance,
-          currentValue: currentTotal,
+          ...portfolioValues(
+            cashBalance,
+            byClass.equities,
+            byClass.options,
+            portfolioMarginSettings(portfolio),
+          ),
           equitiesValue: byClass.equities,
           optionsValue: byClass.options,
-          projectedNetWorth: projectionTotals.projectedNetWorth,
+          ...projectionTotals,
           projectedPositionsTotal: projectionTotals.projectedPositionsTotal,
           positionCount: portfolio.positions.length,
         };

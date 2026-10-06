@@ -1,0 +1,97 @@
+.calculator {
+  min-width: 0;
+  margin: 16px 0 24px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface-soft);
+}
+
+.calculator h3 {
+  margin: 0 0 8px;
+  font-size: 17px;
+}
+
+.context,
+.assumptions {
+  margin: 8px 0;
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.price {
+  display: grid;
+  gap: 6px;
+  margin: 16px 0;
+  font-size: 12px;
+}
+
+.price input {
+  width: 100%;
+  max-width: 320px;
+  min-width: 0;
+  font-family: var(--font-numeric, sans-serif);
+  font-variant-numeric: lining-nums tabular-nums;
+}
+
+.price small {
+  color: var(--muted);
+}
+
+.price input[aria-invalid="true"] {
+  border-color: var(--copper);
+}
+
+.error {
+  color: var(--copper);
+}
+
+.results {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin: 16px 0;
+}
+
+.results > div {
+  min-width: 0;
+}
+
+.results h4 {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.results output {
+  display: block;
+  font-size: clamp(19px, 3vw, 26px);
+  overflow-wrap: anywhere;
+}
+
+.formula {
+  display: block;
+  margin: 10px 0;
+  font-family: var(--font-numeric, sans-serif);
+  font-variant-numeric: lining-nums tabular-nums;
+  font-size: 12px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+
+.controls input[type="range"] {
+  min-width: 0;
+  margin-inline: 0;
+}
+
+@media (max-width: 560px) {
+  .calculator {
+    padding: 14px;
+  }
+
+  .results {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

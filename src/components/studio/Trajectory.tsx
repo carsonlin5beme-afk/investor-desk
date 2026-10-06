@@ -8,6 +8,7 @@ import { Segmented } from "./Controls";
 export function Trajectory({
   holdings,
   cash,
+  debt = 0,
   mode,
   setMode,
   onStudio,
@@ -15,6 +16,7 @@ export function Trajectory({
 }: {
   holdings: Holding[];
   cash: number;
+  debt?: number;
   mode: "model" | "intrinsic";
   setMode: (m: "model" | "intrinsic") => void;
   onStudio: () => void;
@@ -26,10 +28,11 @@ export function Trajectory({
   const at = useMemo(() => Date.now(), [assets]);
   const values = useMemo(
     () =>
-      Array.from({ length: 41 }, (_, i) =>
-        totalAt(assets, cash, i / 40, mode, undefined, at),
+      Array.from(
+        { length: 41 },
+        (_, i) => totalAt(assets, cash, i / 40, mode, undefined, at) - debt,
       ),
-    [assets, cash, mode, at],
+    [assets, cash, mode, at, debt],
   );
   const contribution = assets
     .map((a, i) => ({
@@ -42,14 +45,14 @@ export function Trajectory({
     1,
   );
   const headline = money(
-    totalAt(assets, cash, progress, mode, undefined, at),
+    totalAt(assets, cash, progress, mode, undefined, at) - debt,
     0,
   );
   return (
     <section className="panel trajectory">
       <div className="section-heading">
         <div>
-          <h2>Portfolio value</h2>
+          <h2>{debt > 0 ? "Portfolio net equity" : "Portfolio value"}</h2>
         </div>
         <button
           className="icon-button"
@@ -86,7 +89,8 @@ export function Trajectory({
             name: "Portfolio",
             color: "var(--green)",
             values,
-            valueAt: (p) => totalAt(assets, cash, p, mode, undefined, at),
+            valueAt: (p) =>
+              totalAt(assets, cash, p, mode, undefined, at) - debt,
           },
         ]}
         label="Hypothetical portfolio value toward all targets"
@@ -96,7 +100,9 @@ export function Trajectory({
         <span className="badge subtle">Hypothetical scenario</span>
         <p>
           Every holding moves toward its own target together. The horizontal
-          axis is scenario progress, not time or probability.
+          axis is scenario progress, not time or probability.{" "}
+          {debt > 0 &&
+            "Entered margin debt stays fixed here; monthly scenarios estimate future interest."}
         </p>
       </div>
       <button

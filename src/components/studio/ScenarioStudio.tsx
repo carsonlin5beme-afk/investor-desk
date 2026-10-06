@@ -1,9 +1,20 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { z } from "zod";
-import { scenarioSchema } from "@/lib/studio";
+import {
+  scenarioSchema,
+  validateScenarioPortfolios,
+  validateScenarioTax,
+} from "@/lib/studio";
 import { useSessionDraft } from "./useSessionDraft";
-const parseDraft = scenarioSchema.extend({ name: z.string().max(80) }).parse;
+const parseDraft = (input: unknown) => {
+  const parsed = scenarioSchema
+    .extend({ name: z.string().max(80) })
+    .parse(input);
+  validateScenarioPortfolios(parsed);
+  validateScenarioTax(parsed);
+  return parsed;
+};
 import {
   Copy,
   Plus,
@@ -16,7 +27,8 @@ import {
 import { type Portfolio, money } from "@/lib/desk-types";
 import {
   snapshot,
-  totalAt,
+  scenarioTotalAt,
+  scenarioFinancing,
   type SavedScenario,
   type Assumptions,
 } from "@/lib/studio";
@@ -24,6 +36,12 @@ import { ValueChart } from "./ValueChart";
 import { Segmented, SaveState } from "./Controls";
 import type { WorkspaceController } from "./useWorkspace";
 import { MonthlyScenario } from "./MonthlyScenario";
+import { TaxTracker } from "./TaxTracker";
+import {
+  targetTaxSales,
+  targetDaysForSaleDate,
+  targetSaleDate,
+} from "@/lib/scenario-tax-sales";
 
 export function ScenarioStudio(props: {
   portfolios: Portfolio[];
@@ -70,6 +88,19 @@ function TargetScenarioStudio({
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [didSave, setDidSave] = useState(false);
+  const [saleTiming, setSaleTiming] = useState<{
+    id: string;
+    dateRaw?: string | null;
+    daysRaw?: string;
+    error: string;
+  } | null>(null);
+  const revision = useRef(0);
+  const timingIssue =
+    draft && saleTiming?.id === draft.id
+      ? saleTiming.error
+      : draft?.assumptions.daysForward == null && draft
+        ? "Choose a sale date or days forward to restore valuation timing."
+        : null;
   const current = useMemo(
     () => snapshot(portfolios, "Current targets"),
     [portfolios],
@@ -81,33 +112,19 @@ function TargetScenarioStudio({
     color: ["var(--green)", "var(--copper)", "var(--blue)", "var(--purple)"][
       i % 4
     ],
-    valueAt: (p: number) =>
-      totalAt(
-        s.assets,
-        s.cash,
-        p,
-        mode,
-        s.assumptions,
-        new Date(s.capturedAt).getTime(),
-      ),
+    valueAt: (p: number) => scenarioTotalAt(s, p, mode),
     values: Array.from({ length: 41 }, (_, j) =>
-      totalAt(
-        s.assets,
-        s.cash,
-        j / 40,
-        mode,
-        s.assumptions,
-        new Date(s.capturedAt).getTime(),
-      ),
+      scenarioTotalAt(s, j / 40, mode),
     ),
   }));
   async function save() {
-    if (!draft) return;
+    if (!draft || timingIssue) return;
     setBusy(true);
     setError("");
+    const savedRevision = revision.current;
     try {
       await workspace.save(`scenario:${draft.id}`, draft);
-      setDidSave(true);
+      if (savedRevision === revision.current) setDidSave(true);
       setCompared((v) =>
         [...v.filter((id) => id !== draft.id), draft.id].slice(-3),
       );
@@ -118,11 +135,30 @@ function TargetScenarioStudio({
     }
   }
   const change = (partial: Partial<SavedScenario>) => {
+    revision.current++;
     setDraft((old) => (old ? { ...old, ...partial } : old));
     setDidSave(false);
   };
   const assumption = (partial: Partial<Assumptions>) =>
     draft && change({ assumptions: { ...draft.assumptions, ...partial } });
+  const changeSaleDate = (date: string | null) => {
+    if (!draft) return;
+    const days = targetDaysForSaleDate(draft, date);
+    if (days == null) {
+      revision.current++;
+      setDidSave(false);
+      assumption({ daysForward: null });
+      setSaleTiming({
+        id: draft.id,
+        dateRaw: date,
+        error:
+          "Enter a sale date on or after capture, within the 10-year model horizon.",
+      });
+      return;
+    }
+    setSaleTiming(null);
+    assumption({ daysForward: days });
+  };
   return (
     <section className="studio-page">
       <div className="section-heading">
@@ -139,6 +175,8 @@ function TargetScenarioStudio({
           className="button primary"
           disabled={!portfolios.length || workspace.loading}
           onClick={() => {
+            revision.current++;
+            setSaleTiming(null);
             setDraft(snapshot(portfolios, `Scenario ${saved.length + 1}`));
             setError("");
             setDidSave(false);
@@ -162,23 +200,16 @@ function TargetScenarioStudio({
           />
         </div>
         <ValueChart series={series} label="Saved scenario comparison" />
+        <p className="fine-print">
+          Totals are net equity after frozen margin debt and modeled interest.
+          Loan terms are captured per portfolio; option model interest is a
+          separate assumption.
+        </p>
         <div className="comparison-totals">
           {scenarios.map((s) => (
             <div key={s.id}>
               <span>{s.name}</span>
-              <strong>
-                {money(
-                  totalAt(
-                    s.assets,
-                    s.cash,
-                    1,
-                    mode,
-                    s.assumptions,
-                    new Date(s.capturedAt).getTime(),
-                  ),
-                  0,
-                )}
-              </strong>
+              <strong>{money(scenarioTotalAt(s, 1, mode), 0)}</strong>
               <small>
                 {s === current
                   ? "Current workspace"
@@ -240,19 +271,7 @@ function TargetScenarioStudio({
                     {s.assets.length} holdings · {s.portfolioNames.join(", ")}
                   </span>
                   <h3>{s.name}</h3>
-                  <strong>
-                    {money(
-                      totalAt(
-                        s.assets,
-                        s.cash,
-                        1,
-                        mode,
-                        s.assumptions,
-                        new Date(s.capturedAt).getTime(),
-                      ),
-                      0,
-                    )}
-                  </strong>
+                  <strong>{money(scenarioTotalAt(s, 1, mode), 0)}</strong>
                   <p>{s.notes || "A saved view of your investment thesis."}</p>
                 </div>
                 <div className="card-actions">
@@ -276,6 +295,8 @@ function TargetScenarioStudio({
                   <button
                     className="text-button"
                     onClick={() => {
+                      revision.current++;
+                      setSaleTiming(null);
                       setDraft(structuredClone(s));
                       setDidSave(false);
                       setError("");
@@ -287,6 +308,8 @@ function TargetScenarioStudio({
                     className="icon-button"
                     aria-label={`Duplicate ${s.name}`}
                     onClick={() => {
+                      revision.current++;
+                      setSaleTiming(null);
                       setDraft({
                         ...structuredClone(s),
                         id: crypto.randomUUID(),
@@ -330,6 +353,8 @@ function TargetScenarioStudio({
             <button
               className="text-button"
               onClick={() => {
+                revision.current++;
+                setSaleTiming(null);
                 setDraft(null);
                 setError("");
               }}
@@ -409,7 +434,7 @@ function TargetScenarioStudio({
             <summary>Option model assumptions</summary>
             <div className="three-column">
               <label>
-                Interest rate (%)
+                Option model risk-free rate (%)
                 <input
                   type="number"
                   min={-10}
@@ -450,10 +475,36 @@ function TargetScenarioStudio({
                   type="number"
                   min={0}
                   max={3650}
-                  value={draft.assumptions.daysForward}
-                  onChange={(e) =>
-                    assumption({ daysForward: Number(e.target.value) })
+                  step="any"
+                  value={
+                    saleTiming?.id === draft.id && saleTiming.daysRaw != null
+                      ? saleTiming.daysRaw
+                      : (draft.assumptions.daysForward ?? "")
                   }
+                  onChange={(e) => {
+                    const raw = e.target.value,
+                      days = Number(raw);
+                    if (
+                      !raw.trim() ||
+                      !Number.isFinite(days) ||
+                      days < 0 ||
+                      days > 3650
+                    ) {
+                      revision.current++;
+                      setDidSave(false);
+                      assumption({ daysForward: null });
+                      setSaleTiming({
+                        id: draft.id,
+                        daysRaw: raw,
+                        dateRaw: null,
+                        error:
+                          "Enter a finite number of days from 0 to 3650, or choose a valid sale date.",
+                      });
+                      return;
+                    }
+                    setSaleTiming(null);
+                    assumption({ daysForward: days });
+                  }}
                 />
               </label>
             </div>
@@ -464,9 +515,10 @@ function TargetScenarioStudio({
             </p>
             <button
               className="text-button"
-              onClick={() =>
-                assumption({ rate: 0.04, iv: null, daysForward: 0 })
-              }
+              onClick={() => {
+                setSaleTiming(null);
+                assumption({ rate: 0.04, iv: null, daysForward: 0 });
+              }}
             >
               <RotateCcw size={14} />
               Reset assumptions
@@ -479,38 +531,59 @@ function TargetScenarioStudio({
                 id: draft.id,
                 name: draft.name,
                 color: "var(--green)",
-                valueAt: (p: number) =>
-                  totalAt(
-                    draft.assets,
-                    draft.cash,
-                    p,
-                    mode,
-                    draft.assumptions,
-                    new Date(draft.capturedAt).getTime(),
-                  ),
+                valueAt: (p: number) => scenarioTotalAt(draft, p, mode),
                 values: Array.from({ length: 41 }, (_, i) =>
-                  totalAt(
-                    draft.assets,
-                    draft.cash,
-                    i / 40,
-                    mode,
-                    draft.assumptions,
-                    new Date(draft.capturedAt).getTime(),
-                  ),
+                  scenarioTotalAt(draft, i / 40, mode),
                 ),
               },
             ]}
           />
           <p className="fine-print">
-            Draft changes stay in this tab. Save the scenario to preserve it in
-            your workspace.
+            Margin debt{" "}
+            <span className="private-value">
+              {money(
+                draft.portfolioSnapshots?.reduce(
+                  (sum, p) => sum + p.margin.debt,
+                  0,
+                ) ?? 0,
+              )}
+            </span>
+            , new interest{" "}
+            <span className="private-value">
+              {money(scenarioFinancing(draft)?.interest)}
+            </span>{" "}
+            over {scenarioFinancing(draft)?.elapsedDays ?? "unavailable"}{" "}
+            Eastern calendar days. Daily compounding uses each captured 360/365
+            basis. Draft changes stay in this tab. Save the scenario to preserve
+            it in your workspace.
           </p>
+          <TaxTracker
+            assets={draft.assets}
+            settings={draft.tax}
+            sales={targetTaxSales(draft, mode, !timingIssue)}
+            onChange={(tax) => change({ tax })}
+            scenarioId={draft.id}
+            capturedAt={draft.capturedAt}
+            context={`Full liquidation at 100% targets · ${mode === "model" ? "Model estimate" : "Intrinsic targets"}. The sale date is the option model and financing valuation date.`}
+            saleDate={
+              saleTiming?.id === draft.id && "dateRaw" in saleTiming
+                ? saleTiming.dateRaw
+                : targetSaleDate(draft)
+            }
+            onSaleDate={changeSaleDate}
+          />
+          {timingIssue && (
+            <p className="error-box" role="alert">
+              {timingIssue} Valuation timing is unknown; tax and future
+              financing are unavailable until repaired.
+            </p>
+          )}
           <div className="editor-footer">
             <SaveState busy={busy} error={error} saved={didSave} />
             <button
               className="button primary"
               onClick={save}
-              disabled={busy || !draft.name.trim()}
+              disabled={busy || !draft.name.trim() || Boolean(timingIssue)}
             >
               <Save size={16} />
               {busy ? "Saving…" : "Save scenario"}

@@ -1,4 +1,9 @@
 "use client";
+import {
+  resolveMarginSettings,
+  summarizeMargin,
+  aggregateMargin,
+} from "@/lib/margin";
 import { useId, useMemo, useRef, useState } from "react";
 import { Download, Printer, FileJson } from "lucide-react";
 import { DeskModal } from "@/components/DeskModal";
@@ -92,29 +97,44 @@ export function Report({
   const cash = portfolios.reduce((s, p) => s + p.cashBalance, 0);
   const assets = useMemo(() => holdings.map(assetFromHolding), [holdings]);
   const portfolioNames = new Map(portfolios.map((p) => [p.id, p.name]));
-  const current = cash + assets.reduce((s, a) => s + a.currentValue, 0);
+  const financing = portfolios.map((p) => ({
+    id: p.id,
+    name: p.name,
+    cash: p.cashBalance,
+    margin: resolveMarginSettings(p.margin),
+    marginSummary: summarizeMargin(
+      p.cashBalance,
+      p.equitiesValue,
+      p.optionsValue,
+      resolveMarginSettings(p.margin),
+    ),
+  }));
+  const debt = financing.reduce((sum, p) => sum + p.margin.debt, 0);
+  // Maintenance always uses complete selected accounts, even in a filtered brief.
+  const fullAccountMargin = aggregateMargin(
+    financing.map((p) => p.marginSummary),
+  );
+  const grossCurrent =
+    cash + assets.reduce((sum, a) => sum + a.currentValue, 0);
+  const current = grossCurrent - debt;
   const curves = useMemo(
     () =>
       Array.from({ length: 41 }, (_, index) => ({
         progress: index / 40,
-        model: totalAt(
-          assets,
-          cash,
-          index / 40,
-          "model",
-          defaultAssumptions,
-          at,
-        ),
-        intrinsic: totalAt(
-          assets,
-          cash,
-          index / 40,
-          "intrinsic",
-          defaultAssumptions,
-          at,
-        ),
+        model:
+          totalAt(assets, cash, index / 40, "model", defaultAssumptions, at) -
+          debt,
+        intrinsic:
+          totalAt(
+            assets,
+            cash,
+            index / 40,
+            "intrinsic",
+            defaultAssumptions,
+            at,
+          ) - debt,
       })),
-    [assets, cash, at],
+    [assets, cash, at, debt],
   );
   const projected = curves[40].model;
   const intrinsic = curves[40].intrinsic;
@@ -122,7 +142,7 @@ export function Report({
   const minimum = Math.min(...values),
     maximum = Math.max(...values);
   const padding = Math.max((maximum - minimum) * 0.14, maximum * 0.025, 1);
-  const low = Math.max(0, minimum - padding),
+  const low = minimum < 0 ? minimum - padding : Math.max(0, minimum - padding),
     high = maximum + padding;
   const y = (value: number) => 180 - ((value - low) / (high - low)) * 180;
   const path = (kind: "model" | "intrinsic") =>
@@ -208,12 +228,18 @@ export function Report({
                 id: p.id,
                 name: p.name,
                 cash: p.cashBalance,
+                margin: resolveMarginSettings(p.margin),
+                marginSummary: financing.find((account) => account.id === p.id)
+                  ?.marginSummary,
               })),
               cash,
               assets,
               assumptions: defaultAssumptions,
               summary: {
                 current,
+                grossCurrent,
+                enteredDebt: debt,
+                fullAccountMaintenance: fullAccountMargin,
                 modelTarget: projected,
                 intrinsicTarget: intrinsic,
               },
@@ -334,11 +360,20 @@ export function Report({
             {scope === "filtered"
               ? "Filtered holdings"
               : "All selected holdings"}{" "}
-            · {holdings.length} positions · Cash from all selected portfolios
+            · {holdings.length} positions · Cash and debt from all selected
+            portfolios
+            {scope === "filtered" &&
+              " · Subset net value after all selected account debt; not full-account net equity"}
           </p>
           <div className="report-kpis">
             <div>
-              <span>Current value</span>
+              <span>
+                {debt > 0
+                  ? scope === "filtered"
+                    ? "Subset net value"
+                    : "Current net equity"
+                  : "Current value"}
+              </span>
               <strong>{display(current)}</strong>
             </div>
             <div>
@@ -468,7 +503,11 @@ export function Report({
             </figure>
           </section>
           <section>
-            <h2>Capital allocation</h2>
+            <h2>Gross asset allocation</h2>
+            <p className="fine-print">
+              Allocation percentages use gross cash and included holdings before
+              liabilities.
+            </p>
             <div className="report-allocation">
               {[
                 [
@@ -489,12 +528,47 @@ export function Report({
                   <span>{label}</span>
                   <strong>
                     {display(Number(v))} ·{" "}
-                    {current ? ((Number(v) / current) * 100).toFixed(1) : 0}%
+                    {grossCurrent > 0
+                      ? ((Number(v) / grossCurrent) * 100).toFixed(1)
+                      : 0}
+                    %
                   </strong>
                 </div>
               ))}
             </div>
           </section>
+          {debt > 0 && (
+            <section>
+              <h2>Margin and net equity</h2>
+              <p>
+                Gross included assets {display(grossCurrent)} · entered debt{" "}
+                {display(debt)} ·{" "}
+                {scope === "filtered" ? "subset net value" : "net equity"}{" "}
+                {display(current)}
+              </p>
+              <p>
+                Full selected account maintenance shortfall{" "}
+                {display(fullAccountMargin?.maintenanceShortfall ?? NaN)}. This
+                uses complete account holdings, including holdings excluded from
+                the filtered brief; account surplus does not offset another
+                account’s shortfall.
+              </p>
+              {financing.map((p) => (
+                <p key={p.id}>
+                  {p.name}: debt {display(p.margin.debt)} · APR{" "}
+                  {p.margin.aprPercent}% · {p.margin.dayCountBasis}-day basis ·{" "}
+                  {p.margin.maintenancePercent}% equity maintenance
+                </p>
+              ))}
+              <p className="fine-print">
+                Equities are assumed eligible; standalone long options are
+                excluded from conservative collateral. Current debt is entered
+                principal, without backfilled interest. These undated target
+                curves keep debt fixed; monthly snapshots estimate daily
+                compounding over whole Eastern calendar days.
+              </p>
+            </section>
+          )}
           <section>
             <h2>Holdings & conviction</h2>
             {holdings.length ? (
@@ -561,7 +635,7 @@ export function Report({
             ) : (
               <p className="fine-print">
                 No holdings are included in this scope. Selected portfolio cash
-                remains included in the brief.
+                and entered debt remain included in the brief.
               </p>
             )}
           </section>

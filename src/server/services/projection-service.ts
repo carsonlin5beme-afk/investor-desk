@@ -111,19 +111,30 @@ export type PositionProjection = Awaited<
 export const aggregatePortfolioProjection = (
   cashBalance: number,
   positions: PositionProjection[],
-) => ({
-  projectedNetWorth: sumProjectedNetWorth(
+  marginDebt = 0,
+) => {
+  if (!Number.isFinite(marginDebt) || marginDebt < 0)
+    throw new Error("Invalid entered margin debt.");
+  const grossProjectedValue = sumProjectedNetWorth(
     cashBalance,
     positions.map((p) => p.projectedValue),
-  ),
-  projectedPositionsTotal: sumProjectedNetWorth(
-    0,
-    positions.map((p) => p.projectedValue),
-  ),
-  intrinsicNetWorth: sumProjectedNetWorth(
+  );
+  const grossIntrinsicValue = sumProjectedNetWorth(
     cashBalance,
     positions.map((p) => p.optionIntrinsicProjectedValue ?? p.projectedValue),
-  ),
-  targetCount: positions.filter((p) => p.hasTarget).length,
-  estimatedCount: positions.filter((p) => p.priceEstimated).length,
-});
+  );
+  return {
+    grossProjectedValue,
+    grossIntrinsicValue,
+    projectedNetWorth:
+      Math.round((grossProjectedValue - marginDebt) * 100) / 100,
+    projectedPositionsTotal: sumProjectedNetWorth(
+      0,
+      positions.map((p) => p.projectedValue),
+    ),
+    intrinsicNetWorth:
+      Math.round((grossIntrinsicValue - marginDebt) * 100) / 100,
+    targetCount: positions.filter((p) => p.hasTarget).length,
+    estimatedCount: positions.filter((p) => p.priceEstimated).length,
+  };
+};

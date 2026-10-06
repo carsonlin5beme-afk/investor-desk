@@ -117,7 +117,7 @@ async function enter(field: HTMLInputElement, value: string) {
 const click = (target: HTMLElement) => act(() => target.click());
 const pickMonth = (date: string) =>
   click(container.querySelector<HTMLButtonElement>(`[data-month="${date}"]`)!);
-async function pickTargetMode(mode: "price" | "valuation") {
+async function pickTargetMode(mode: "price" | "valuation" | "return") {
   const select = container.querySelector<HTMLSelectElement>(
     'select[aria-label="BTG target type"]',
   )!;
@@ -127,6 +127,269 @@ async function pickTargetMode(mode: "price" | "valuation") {
     select.dispatchEvent(new Event("change", { bubbles: true }));
   });
 }
+
+const storedDraft = () =>
+  JSON.parse(sessionStorage.getItem(draftKey)!) as SavedScenario;
+
+function storedReturnInputs() {
+  const inputs = storedDraft().monthly!.paths[0].targetInputs?.returnInputs;
+  expect(inputs, "Persisted monthly return inputs").toBeDefined();
+  return inputs!;
+}
+
+async function reopenSaved(id: string) {
+  await act(() => root.unmount());
+  sessionStorage.clear();
+  root = createRoot(container);
+  await render();
+  const select = container.querySelector<HTMLSelectElement>(
+    'select[aria-label="Open saved scenario"]',
+  )!;
+  await act(() => {
+    select.value = id;
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+}
+
+describe("monthly return targets", () => {
+  it("compounds +10% then -5% from an explicit starting price while preserving captured values", async () => {
+    await render();
+    expect(
+      container.querySelector(
+        'select[aria-label="BTG target type"] option[value="return"]',
+      )?.textContent,
+    ).toBe("Monthly return (%)");
+    await pickTargetMode("return");
+    expect(
+      container.querySelectorAll('[aria-label="BTG starting price"]'),
+    ).toHaveLength(1);
+    await enter(input("BTG starting price"), "100");
+    const rate = input("BTG monthly return in October 2026");
+    expect(rate.classList.contains("financial-number")).toBe(true);
+    expect(rate.classList.contains("private-value")).toBe(true);
+    await enter(rate, "+10");
+    expect(container.textContent).toContain("Implied stock price: $110.00");
+    await pickMonth("2026-11-30");
+    await enter(input("BTG monthly return in November 2026"), "-5");
+    expect(container.textContent).toContain("Implied stock price: $104.50");
+    expect(
+      container.querySelector('[data-testid="monthly-total"]')?.textContent,
+    ).not.toBe("Incomplete");
+    expect(storedDraft().monthly!.paths[0].initialPrice).toBe(100);
+    expect(storedDraft().assets[0].spot).toBe(5);
+    expect(storedReturnInputs().slice(0, 2)).toEqual(["+10", "-5"]);
+    await pickMonth("2026-10-31");
+    expect(input("BTG monthly return in October 2026").value).toBe("+10");
+    expect(container.textContent).toContain("Implied stock price: $110.00");
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("distinguishes a zero return from a blank and restores dependent months when the gap is filled", async () => {
+    await render();
+    await pickTargetMode("return");
+    await enter(input("BTG starting price"), "100");
+    await enter(input("BTG monthly return in October 2026"), "0");
+    expect(container.textContent).toContain("Implied stock price: $100.00");
+    await enter(input("BTG monthly return in October 2026"), "");
+    expect(
+      container.querySelector('[data-testid="monthly-total"]')?.textContent,
+    ).toBe("Incomplete");
+    expect(button("Save monthly scenario").disabled).toBe(false);
+    await pickMonth("2026-11-30");
+    await enter(input("BTG monthly return in November 2026"), "0");
+    expect(
+      container.querySelector('[data-testid="monthly-total"]')?.textContent,
+    ).toBe("Incomplete");
+    expect(container.textContent).not.toContain("Implied stock price: $0.00");
+    await pickMonth("2026-10-31");
+    await enter(input("BTG monthly return in October 2026"), "0");
+    await pickMonth("2026-11-30");
+    expect(input("BTG monthly return in November 2026").value).toBe("0");
+    expect(container.textContent).toContain("Implied stock price: $100.00");
+    expect(
+      container.querySelector('[data-testid="monthly-total"]')?.textContent,
+    ).not.toBe("Incomplete");
+  });
+
+  it("accepts exactly -100% as zero but rejects a loss below -100%", async () => {
+    await render();
+    await pickTargetMode("return");
+    await enter(input("BTG starting price"), "100");
+    await enter(input("BTG monthly return in October 2026"), "-100");
+    expect(container.textContent).toContain("Implied stock price: $0.00");
+    expect(
+      container.querySelector('[data-testid="monthly-total"]')?.textContent,
+    ).toBe("$1,000.00");
+    expect(button("Save monthly scenario").disabled).toBe(false);
+    await pickMonth("2026-11-30");
+    await enter(input("BTG monthly return in November 2026"), "10");
+    expect(container.textContent).toContain("Implied stock price: $0.00");
+    await pickMonth("2026-10-31");
+    await enter(input("BTG monthly return in October 2026"), "-100.01");
+    expect(button("Save monthly scenario").disabled).toBe(true);
+    expect(
+      container.querySelector('[data-testid="monthly-total"]')?.textContent,
+    ).toBe("Incomplete");
+    expect(storedReturnInputs()[0]).toBe("-100.01");
+    await enter(input("BTG monthly return in October 2026"), "-100");
+    expect(button("Save monthly scenario").disabled).toBe(false);
+  });
+
+  it.each(["ten", "1e309"])(
+    "retains the invalid raw return %s through reload and keeps other target modes usable",
+    async (raw) => {
+      await render();
+      await enter(input("BTG price in October 2026"), "007.50");
+      await pickTargetMode("return");
+      await enter(input("BTG starting price"), "100");
+      await enter(input("BTG monthly return in October 2026"), raw);
+      expect(button("Save monthly scenario").disabled).toBe(true);
+      expect(
+        container.querySelector('[data-testid="monthly-total"]')?.textContent,
+      ).toBe("Incomplete");
+      await act(() => root.unmount());
+      root = createRoot(container);
+      await render();
+      expect(input("BTG monthly return in October 2026").value).toBe(raw);
+      expect(input("BTG starting price").value).toBe("100");
+      expect(button("Save monthly scenario").disabled).toBe(true);
+      await pickTargetMode("price");
+      expect(input("BTG price in October 2026").value).toBe("007.50");
+      expect(button("Save monthly scenario").disabled).toBe(false);
+      expect(
+        container.querySelector('[data-testid="monthly-total"]')?.textContent,
+      ).not.toBe("Incomplete");
+      await pickTargetMode("valuation");
+      await enter(input("BTG shares outstanding"), "1000000000");
+      await enter(input("BTG company valuation in October 2026"), "6000000000");
+      expect(container.textContent).toContain("Implied stock price: $6.00");
+      expect(button("Save monthly scenario").disabled).toBe(false);
+      await pickTargetMode("return");
+      expect(input("BTG monthly return in October 2026").value).toBe(raw);
+      expect(button("Save monthly scenario").disabled).toBe(true);
+      await enter(input("BTG monthly return in October 2026"), "10");
+      expect(container.textContent).toContain("Implied stock price: $110.00");
+      expect(button("Save monthly scenario").disabled).toBe(false);
+    },
+  );
+
+  it("saves, reopens and duplicates independent raw inputs, appending a blank rate after month removal or addition", async () => {
+    await render();
+    await enter(input("BTG price in October 2026"), "007.50");
+    await pickTargetMode("valuation");
+    await enter(
+      input("BTG company valuation in October 2026"),
+      "06000000000.00",
+    );
+    await enter(input("BTG shares outstanding"), "1000000000");
+    await pickTargetMode("return");
+    await enter(input("BTG starting price"), "100");
+    await enter(input("BTG monthly return in October 2026"), "+010.00");
+    await pickMonth("2026-11-30");
+    await enter(input("BTG monthly return in November 2026"), "-05.0");
+    await pickMonth("2027-03-31");
+    await enter(input("BTG monthly return in March 2027"), "2.500");
+    await click(button("Add month"));
+    await pickMonth("2027-04-30");
+    expect(input("BTG monthly return in April 2027").value).toBe("");
+    await enter(input("BTG monthly return in April 2027"), "000");
+    await click(button("Remove last month"));
+    expect(container.querySelector('[data-month="2027-04-30"]')).toBeNull();
+    expect(storedReturnInputs()).toHaveLength(6);
+    expect(storedReturnInputs().at(-1)).toBe("2.500");
+    await click(button("Add month"));
+    await pickMonth("2027-04-30");
+    expect(input("BTG monthly return in April 2027").value).toBe("");
+    await pickMonth("2026-10-31");
+    await click(button("Save monthly scenario"));
+    expect(workspace.save).toHaveBeenCalledOnce();
+    const saved = workspace.entries[0].value as SavedScenario;
+    const targets = saved.monthly!.paths[0].targetInputs!;
+    expect(targets).toMatchObject({
+      mode: "return",
+      sharesOutstandingInput: "1000000000",
+    });
+    expect(targets.priceInputs).toHaveLength(7);
+    expect(targets.marketCapInputs).toHaveLength(7);
+    expect(targets.returnInputs).toEqual([
+      "+010.00",
+      "-05.0",
+      "",
+      "",
+      "",
+      "2.500",
+      "",
+    ]);
+    expect(targets.priceInputs[0]).toBe("007.50");
+    expect(targets.marketCapInputs[0]).toBe("06000000000.00");
+    await reopenSaved(saved.id);
+    expect(input("BTG monthly return in October 2026").value).toBe("+010.00");
+    expect(input("BTG starting price").value).toBe("100");
+    expect(container.textContent).toContain("Implied stock price: $110.00");
+    await pickTargetMode("price");
+    expect(input("BTG price in October 2026").value).toBe("007.50");
+    await pickTargetMode("valuation");
+    expect(input("BTG company valuation in October 2026").value).toBe(
+      "06000000000.00",
+    );
+    expect(input("BTG shares outstanding").value).toBe("1000000000");
+    await pickTargetMode("return");
+    await click(button("Duplicate"));
+    expect(storedDraft().id).not.toBe(saved.id);
+    expect(storedDraft().monthly!.paths[0].targetInputs).toEqual(targets);
+    await click(button("Save monthly scenario"));
+    expect(workspace.entries).toHaveLength(2);
+    const copy = workspace.entries.find(
+      (entry) => (entry.value as SavedScenario).id !== saved.id,
+    )!.value as SavedScenario;
+    expect(copy.name).toContain("copy");
+    expect(copy.monthly).toEqual(saved.monthly);
+    await reopenSaved(copy.id);
+    await pickMonth("2026-11-30");
+    expect(input("BTG monthly return in November 2026").value).toBe("-05.0");
+    expect(container.textContent).toContain("Implied stock price: $104.50");
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("opens a legacy valuation draft without return inputs and normalizes new rates to blanks", async () => {
+    const draft = monthlyFixture();
+    const legacy = {
+      ...draft,
+      monthly: {
+        ...draft.monthly!,
+        paths: draft.monthly!.paths.map((path) => ({
+          ...path,
+          targetInputs: {
+            mode: "valuation",
+            priceInputs: path.prices.map(String),
+            marketCapInputs: path.prices.map(() => "6000000000"),
+            sharesOutstandingInput: "1000000000",
+            sharesSource: "manual",
+          },
+        })),
+      },
+    };
+    sessionStorage.setItem(draftKey, JSON.stringify(legacy));
+    await render();
+    expect(input("BTG company valuation in October 2026").value).toBe(
+      "6000000000",
+    );
+    expect(container.textContent).toContain("Implied stock price: $6.00");
+    await pickTargetMode("return");
+    expect(input("BTG monthly return in October 2026").value).toBe("");
+    expect(storedReturnInputs()).toEqual(["", "", "", ""]);
+    expect(
+      container.querySelector('[data-testid="monthly-total"]')?.textContent,
+    ).toBe("Incomplete");
+    expect(button("Save monthly scenario").disabled).toBe(false);
+    await pickTargetMode("price");
+    expect(input("BTG price in October 2026").value).toBe("6");
+    await pickTargetMode("valuation");
+    expect(input("BTG company valuation in October 2026").value).toBe(
+      "6000000000",
+    );
+  });
+});
 
 describe("monthly scenario editor", () => {
   it("retains separate price and valuation inputs, shares assumptions and added months through save and reopen", async () => {

@@ -1,3 +1,4 @@
+import { portfolioMarginSettings } from "@/server/services/portfolio-margin";
 import { createPortfolioSchema } from "@/server/api/schemas";
 import { portfolioDeleteSchema } from "@/lib/portfolio-delete";
 import { cookies } from "next/headers";
@@ -24,6 +25,7 @@ import {
 } from "./store";
 import {
   adjustCash,
+  updateGuestMargin,
   createPortfolio,
   guestFailure,
   guestOrder,
@@ -244,7 +246,7 @@ export async function guestResponse(
           ),
         );
       const match = path.match(
-        /^\/api\/portfolios\/([^/]+)(?:\/(cash|projection|activity))?$/,
+        /^\/api\/portfolios\/([^/]+)(?:\/(cash|projection|activity|margin))?$/,
       );
       if (match) {
         const id = decodeURIComponent(match[1]),
@@ -279,6 +281,19 @@ export async function guestResponse(
           p.name = body.name.trim();
           return json({ portfolio: { id: p.id, name: p.name } });
         }
+        if (part === "margin") {
+          if (method === "PATCH")
+            return json({
+              portfolioId: id,
+              margin: updateGuestMargin(active, id, await request.json()),
+            });
+          if (method === "GET")
+            return json({
+              portfolioId: id,
+              margin: portfolioMarginSettings(p),
+            });
+          return json({ error: "Use GET or PATCH for margin settings." }, 405);
+        }
         if (part === "cash" && method === "POST")
           return json(adjustCash(active, id, await request.json()));
         if (part === "activity")
@@ -292,6 +307,13 @@ export async function guestResponse(
             portfolioId: id,
             cashBalance: view.cashBalance,
             projectedNetWorth: view.projectedNetWorth,
+            grossProjectedValue: view.grossProjectedValue,
+            grossIntrinsicValue: view.grossIntrinsicValue,
+            intrinsicNetWorth: view.intrinsicNetWorth,
+            grossCurrentValue: view.grossCurrentValue,
+            netEquity: view.netEquity,
+            margin: view.margin,
+            marginSummary: view.marginSummary,
             projectedPositionsTotal: view.projectedPositionsTotal,
             positions: view.positions.map((p) => p.projection),
           });

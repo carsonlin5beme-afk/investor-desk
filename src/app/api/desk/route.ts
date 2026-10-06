@@ -1,3 +1,7 @@
+import {
+  portfolioMarginSettings,
+  portfolioValues,
+} from "@/server/services/portfolio-margin";
 import { guestResponse, guestStatus } from "@/server/guest/http";
 import { currentProfile } from "@/server/auth/access";
 import { NextResponse } from "next/server";
@@ -59,12 +63,18 @@ export async function GET(request: Request) {
           name: p.name,
           cashBalance,
           startingCash: p.startingCash.toNumber(),
-          currentValue: cashBalance + equitiesValue + optionsValue,
+          ...portfolioValues(
+            cashBalance,
+            equitiesValue,
+            optionsValue,
+            portfolioMarginSettings(p),
+          ),
           equitiesValue,
           optionsValue,
           ...aggregatePortfolioProjection(
             cashBalance,
             positions.map((x) => x.projection),
+            portfolioMarginSettings(p).debt,
           ),
           positions,
           orders: p.orders,

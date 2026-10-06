@@ -20,6 +20,8 @@ import styles from "./AmbientRadio.module.css";
 
 const active = (state: AmbientState) =>
   state === "playing" || state === "starting";
+const volumeStorageKey = "investor-desk:ambient-volume:v1";
+const pausedStorageKey = "investor-desk:ambient-paused:v1";
 const stateLabel: Record<AmbientState, string> = {
   idle: "Sound off",
   starting: "Starting…",
@@ -40,6 +42,7 @@ const RadioContext = createContext<{
   volume: number;
   motionVisible: boolean;
   toggle: () => void;
+  requestAutoPlay: () => () => void;
   changeVolume: (value: number) => void;
   playImpact: AsteroidImpactSound;
   playLaunch: BlastLaunchSound;
@@ -62,19 +65,94 @@ export function AmbientRadio({ children }: { children: ReactNode }) {
   const engine = useRef<AmbientAudio | null>(null);
   const volumeRef = useRef(initialAmbientVolume);
   const stateRef = useRef<AmbientState>("idle");
+  const preferencesRead = useRef(false);
+  const userPaused = useRef(false);
   const updateState = useCallback((next: AmbientState) => {
     stateRef.current = next;
     setState(next);
   }, []);
-  const toggle = useCallback(() => {
-    if (active(stateRef.current)) {
-      engine.current?.pause();
-      return;
+  const readPreferences = useCallback(() => {
+    if (preferencesRead.current) return;
+    preferencesRead.current = true;
+    try {
+      const stored = localStorage.getItem(volumeStorageKey);
+      const value = stored === null ? NaN : Number(stored);
+      if (Number.isFinite(value) && value >= 0 && value <= 1) {
+        volumeRef.current = value;
+        setVolume(value);
+      }
+    } catch {
+      /* Restricted storage does not prevent listening. */
     }
-    engine.current ??= new AmbientAudio(updateState);
-    engine.current.setVolume(volumeRef.current);
-    void engine.current.play();
+    try {
+      userPaused.current = sessionStorage.getItem(pausedStorageKey) === "true";
+    } catch {
+      /* The current provider still remembers a deliberate pause. */
+    }
+    if (userPaused.current && stateRef.current === "idle")
+      updateState("paused");
   }, [updateState]);
+  const play = useCallback(() => {
+    readPreferences();
+    engine.current ??= new AmbientAudio(updateState);
+    const player = engine.current;
+    player.setVolume(volumeRef.current);
+    void Promise.resolve(player.play()).catch(() => {
+      if (engine.current === player) updateState("error");
+    });
+  }, [readPreferences, updateState]);
+  const toggle = useCallback(() => {
+    readPreferences();
+    const pause = active(stateRef.current);
+    userPaused.current = pause;
+    try {
+      sessionStorage.setItem(pausedStorageKey, String(pause));
+    } catch {
+      /* Playback controls still work when storage is restricted. */
+    }
+    if (pause) engine.current?.pause();
+    else play();
+  }, [play, readPreferences]);
+  const requestAutoPlay = useCallback(() => {
+    // A homepage can opt in without making direct workspace visits audible.
+    // Read synchronously: child effects run before the provider's mount effect.
+    readPreferences();
+    const permitted = () => !userPaused.current && volumeRef.current > 0;
+    const resume = (event: MouseEvent | KeyboardEvent) => {
+      if (!permitted() || document.visibilityState !== "visible") return;
+      // The radio's own controls handle this gesture; resuming here as well
+      // would turn their subsequent toggle into a pause.
+      if (
+        event.target instanceof Element &&
+        event.target.closest("[data-radio-toggle]")
+      )
+        return;
+      if (
+        event instanceof KeyboardEvent &&
+        (event.repeat ||
+          event.ctrlKey ||
+          event.altKey ||
+          event.metaKey ||
+          ["Escape", "Shift", "Control", "Alt", "Meta"].includes(event.key))
+      )
+        return;
+      if (stateRef.current === "starting" || stateRef.current === "suspended")
+        play();
+    };
+    document.addEventListener("click", resume, true);
+    document.addEventListener("keydown", resume, true);
+    if (
+      permitted() &&
+      (!engine.current ||
+        stateRef.current === "idle" ||
+        stateRef.current === "suspended")
+    )
+      play();
+    return () => {
+      document.removeEventListener("click", resume, true);
+      document.removeEventListener("keydown", resume, true);
+    };
+  }, [play, readPreferences]);
   const playImpact = useCallback<AsteroidImpactSound>((gold) => {
     if (
       stateRef.current !== "playing" ||
@@ -101,7 +179,7 @@ export function AmbientRadio({ children }: { children: ReactNode }) {
     setVolume(next);
     engine.current?.setVolume(next);
     try {
-      localStorage.setItem("investor-desk:ambient-volume:v1", String(next));
+      localStorage.setItem(volumeStorageKey, String(next));
     } catch {
       /* Volume still works. */
     }
@@ -124,16 +202,7 @@ export function AmbientRadio({ children }: { children: ReactNode }) {
     // Fast Refresh retains React state/refs while rerunning effect cleanup.
     // A disposed engine must not leave a stuck Playing label or auto-resume.
     if (!engine.current && stateRef.current !== "idle") updateState("paused");
-    try {
-      const stored = localStorage.getItem("investor-desk:ambient-volume:v1");
-      const value = stored === null ? NaN : Number(stored);
-      if (Number.isFinite(value) && value >= 0 && value <= 1) {
-        volumeRef.current = value;
-        setVolume(value);
-      }
-    } catch {
-      /* Restricted storage does not prevent listening. */
-    }
+    readPreferences();
     const leave = () => {
       engine.current?.dispose();
       engine.current = null;
@@ -145,7 +214,7 @@ export function AmbientRadio({ children }: { children: ReactNode }) {
       engine.current?.dispose();
       engine.current = null;
     };
-  }, [updateState]);
+  }, [readPreferences, updateState]);
   return (
     <RadioContext.Provider
       value={{
@@ -153,6 +222,7 @@ export function AmbientRadio({ children }: { children: ReactNode }) {
         volume,
         motionVisible,
         toggle,
+        requestAutoPlay,
         changeVolume,
         playImpact,
         playLaunch,
@@ -226,6 +296,7 @@ export function DialogRadioControl() {
       type="button"
       className={`icon-button ${styles.dialogControl}`}
       onClick={radio.toggle}
+      data-radio-toggle
       aria-label={playing ? "Pause space radio" : "Resume space radio"}
       title={playing ? "Pause space radio" : "Resume space radio"}
     >
@@ -235,8 +306,12 @@ export function DialogRadioControl() {
 }
 
 /** The homepage's quiet inlet; it shares the same player as the full controls. */
-export function AmbientRadioOrb() {
+export function AmbientRadioOrb({ autoPlay = false }: { autoPlay?: boolean }) {
   const radio = useContext(RadioContext);
+  const requestAutoPlay = radio?.requestAutoPlay;
+  useEffect(() => {
+    if (autoPlay) return requestAutoPlay?.();
+  }, [autoPlay, requestAutoPlay]);
   if (!radio) return null;
   const playing = active(radio.state);
   const label = playing ? "Pause space radio" : "Play space radio";
@@ -250,6 +325,7 @@ export function AmbientRadioOrb() {
         type="button"
         className={styles.orbButton}
         onClick={radio.toggle}
+        data-radio-toggle
         aria-label={label}
         aria-pressed={radio.state === "playing"}
         title={`${label} · The Long Way Home`}
@@ -309,6 +385,7 @@ export function AmbientRadioControls() {
           type="button"
           className={styles.play}
           onClick={toggle}
+          data-radio-toggle
           aria-label={playing ? "Pause space radio" : "Play space radio"}
         >
           <RadioOrbit />
@@ -384,7 +461,7 @@ export function AmbientRadioControls() {
               ? "Audio could not start. Try Play again or use another browser."
               : state === "suspended"
                 ? "Your browser paused the sound. Press Play to resume."
-                : "Original ambient sound. Starts only when you play."}
+                : "Original ambient sound. Follows your playback and volume choices."}
           </p>
         </section>
       )}

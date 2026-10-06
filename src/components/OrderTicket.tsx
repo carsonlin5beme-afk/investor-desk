@@ -1571,28 +1571,36 @@ export function OrderTicket({
               </p>
             )}
             {asset === "OPTION" &&
-              !manual &&
               side === "BUY" &&
-              contract &&
-              quote?.mark != null &&
-              price != null && (
+              validPrice &&
+              Number.isSafeInteger(Number(quantity)) &&
+              Number(quantity) > 0 &&
+              (manual
+                ? !manualBlocker && manualContractSymbol
+                : contract && quote?.mark != null) && (
                 <details
                   className="disclosure ticket-payoff"
                   open={showPayoff}
                   onToggle={(e) => setShowPayoff(e.currentTarget.open)}
                 >
-                  <summary>Explore payoff & sensitivity</summary>
+                  <summary>Calculate profit & explore payoff</summary>
                   {showPayoff && (
                     <OptionsExplorer
-                      underlying={contract.underlying}
-                      key={contract.contractSymbol}
-                      spot={quote.mark}
-                      strike={contract.strike}
+                      underlying={manual ? symbol : contract!.underlying}
+                      key={
+                        manual ? manualContractSymbol : contract!.contractSymbol
+                      }
+                      spot={manual ? null : quote!.mark}
+                      strike={manual ? Number(manualStrike) : contract!.strike}
                       right={right}
-                      expiration={expiration}
-                      premium={price}
-                      iv={contract.impliedVolatility ?? 0.6}
-                      quantity={Number(quantity) || 1}
+                      expiration={manual ? expiration : contract!.expiration}
+                      premium={price!}
+                      iv={manual ? 0.6 : (contract!.impliedVolatility ?? 0.6)}
+                      ivEstimated={
+                        manual || contract!.impliedVolatility == null
+                      }
+                      quantity={Number(quantity)}
+                      multiplier={holding?.optionDetails?.multiplier ?? 100}
                     />
                   )}
                 </details>
